@@ -71,7 +71,7 @@ jobs:
       - name: Render and measure every mood
         run: |
           set -euo pipefail
-          for m in 0 1 2 3 4; do
+          for m in 0 1 2 3 4 5; do
             ./tools/render/build/nulleig_render "/tmp/mood$m.wav" 45 --mood "$m"
           done
           # The tour walks both axes and every mood transition, which is where

@@ -155,6 +155,18 @@ and how often the harmony moved, and exits non-zero if any of those is wrong.
 CI runs it over every mood on each push, and uploads the audio, so a change to
 the DSP can be listened to before it reaches a device.
 
+### Looking at the UI without a phone
+
+```bash
+flutter test tools/preview/preview_test.dart   # writes tools/preview/out/*.png
+```
+
+The widget tester rasterises with a real canvas, so those PNGs are what the
+painter will actually draw. They are posed from hand-written engine snapshots,
+which is the point: the field can be put in states that would take twenty
+minutes of listening to catch by accident. (Text comes out as boxes — the test
+environment has no real font. Layout and metrics are still true.)
+
 ### Building the app
 
 ```bash

@@ -27,6 +27,8 @@ concurrency:
 jobs:
   update:
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.gen.outputs.version }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -41,6 +43,7 @@ jobs:
       # against it. A latest-only list lets "add source" work while every
       # later Update fails.
       - name: Regenerate altstore.json
+        id: gen
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -48,17 +51,21 @@ jobs:
           gh api "repos/${{ github.repository }}/releases" --paginate > releases.json
           node tools/altstore/make-source.mjs releases.json
           node -e 'JSON.parse(require("fs").readFileSync("altstore.json"))'
+          echo "version=$(node -e 'console.log(require("./altstore.json").apps[0].version)')" >> "$GITHUB_OUTPUT"
 
       - name: Commit it
         run: |
           set -euo pipefail
-          if git diff --quiet -- altstore.json; then
+          git config user.name  'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          # Stage first, then compare the index. `git diff` alone does not see
+          # an untracked file, so on the very first run it reported "already
+          # current" about a manifest that had never been committed at all.
+          git add altstore.json
+          if git diff --cached --quiet -- altstore.json; then
             echo "altstore.json already current"
             exit 0
           fi
-          git config user.name  'github-actions[bot]'
-          git config user.email 'github-actions[bot]@users.noreply.github.com'
-          git add altstore.json
           # [skip ci] so committing the manifest cannot start another build,
           # which would cut another release, which would regenerate the
           # manifest.
@@ -138,11 +145,13 @@ jobs:
       # manifest for several minutes after a successful deploy.
       - name: Wait until Pages serves it
         env:
-          GH_TOKEN: ${{ github.token }}
+          # Handed down from the job that generated it. Reading it back through
+          # the contents API instead was a second thing that could fail, and
+          # did: on the first run the file was not in the repo yet and the 404
+          # took the job down after the deploy had already succeeded.
+          want: ${{ needs.update.outputs.version }}
         run: |
           set -euo pipefail
-          want=$(gh api "repos/${{ github.repository }}/contents/altstore.json" --jq '.content' \
-                 | base64 -d | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>console.log(JSON.parse(s).apps[0].version))')
           url="https://doctorspider42.github.io/null-eigenvalue/altstore.json"
           for attempt in $(seq 1 30); do
             curl -fsSL -H 'Cache-Control: no-cache' "$url" -o served.json || true

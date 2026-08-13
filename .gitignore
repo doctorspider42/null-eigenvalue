@@ -71,3 +71,7 @@ packages/nulleig/build/
 # Rendered audio from the desktop harness
 *.wav
 
+# Screens rendered by tools/preview. Regenerate them rather than commit them:
+# they are a way of looking at the UI, not a golden test.
+tools/preview/out/
+

@@ -185,52 +185,73 @@ class NebulaPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final rect = Offset.zero & size;
-    final s = math.min(size.width, size.height);
+    // The geometric mean of the two sides, not the smaller one. On a phone the
+    // short side is the width, and sizing everything by it left the whole
+    // composition sitting in the middle third of the screen with black above
+    // and below it.
+    final s = math.sqrt(size.width * size.height);
+    // ... and stretched vertically to match, so the orbits fill the frame
+    // rather than describing a circle inside it.
+    final yStretch = 0.55 + 0.42 * (size.height / size.width).clamp(1.0, 2.4);
+
     final palette = state.palette;
     final idleHint = state.idleHint;
     final v = state.vis;
     final gate = v.gate;
-    final centre = Offset(
-      state.centre.dx * size.width,
-      state.centre.dy * size.height,
-    );
+
+    // The composition follows the finger, but only a third of the way.
+    //
+    // Tracking it exactly was the first version and it is wrong: reaching for
+    // a top corner threw everything off the top corner and left two thirds of
+    // the screen dead black. The field is expressed by colour, size and spread
+    // - it does not also need to be expressed by translation, and a third is
+    // enough parallax to feel connected to the drag.
+    Offset place(Offset n) => Offset(
+          (0.5 + (n.dx - 0.5) * 0.30) * size.width,
+          (0.5 + (n.dy - 0.5) * 0.26) * size.height,
+        );
+    final centre = place(state.centre);
 
     canvas.drawRect(rect, Paint()..color = palette.bg);
 
     // A pool of light under the field, so the composition has a place to sit
     // even when every voice is quiet.
-    _blob(canvas, centre, s * 0.85,
-        palette.deep.withValues(alpha: 0.16 + 0.12 * gate));
+    _blob(canvas, centre, s * 1.15,
+        palette.deep.withValues(alpha: 0.26 + 0.12 * gate));
 
     // ---- the register slices ---------------------------------------------
     for (var i = 0; i < neBands; i++) {
       final t = i / (neBands - 1);
       var energy = v.bands[i];
       // While paused the engine reports silence, but a black screen is not a
-      // pause, it is a crash. Breathe gently instead, and hand the picture
-      // back to the music as soon as it starts.
-      final idle = (0.11 + 0.055 * math.sin(state.t * 0.21 + i * 1.7)) *
+      // pause, it is a crash - and this is the first thing anyone sees when
+      // they open the app. So the field breathes on its own until the music
+      // arrives, at a level that is meant to be looked at rather than merely
+      // noticed. Multiplied by (1 - gate), so the moment sound starts this
+      // contributes nothing and the picture is the synthesizer's again.
+      final idle = (0.26 + 0.11 * math.sin(state.t * 0.21 + i * 1.7)) *
           (1 - gate);
       energy = math.max(energy, idle);
 
-      final orbitR = s * (0.05 + 0.40 * math.pow(t, 0.85).toDouble());
-      final pos = centre + state.orbit(i, orbitR);
+      final orbitR = s * (0.06 + 0.42 * math.pow(t, 0.85).toDouble());
+      final o = state.orbit(i, orbitR);
+      final pos = centre + Offset(o.dx, o.dy * yStretch);
       // Low slices are big and soft, high ones small and sharp - which is what
       // the register actually sounds like.
-      final radius = s * (0.30 - 0.20 * t) * (0.45 + 1.05 * energy);
+      final radius = s * (0.30 - 0.19 * t) * (0.45 + 1.05 * energy);
       final colour = palette.forBand(i, neBands, v.centroid);
       _blob(canvas, pos, radius,
-          colour.withValues(alpha: (0.06 + 0.62 * energy).clamp(0.0, 0.85)));
+          colour.withValues(alpha: (0.10 + 0.80 * energy).clamp(0.0, 0.92)));
     }
 
     // ---- the drone itself -------------------------------------------------
-    final coreLevel = math.max(v.level, 0.06 * (1 - gate));
+    final coreLevel = math.max(v.level, 0.24 * (1 - gate));
     _blob(
       canvas,
       centre,
-      s * (0.13 + 0.16 * coreLevel),
+      s * (0.15 + 0.19 * coreLevel),
       Color.lerp(palette.deep, palette.mid, 0.35 + 0.55 * v.centroid)!
-          .withValues(alpha: (0.18 + 0.55 * coreLevel).clamp(0.0, 0.9)),
+          .withValues(alpha: (0.22 + 0.62 * coreLevel).clamp(0.0, 0.95)),
     );
 
     // ---- harmonic movement ------------------------------------------------
@@ -253,7 +274,7 @@ class NebulaPainter extends CustomPainter {
     for (final sp in state._sparks) {
       final u = (sp.age / 3.2).clamp(0.0, 1.0);
       final fade = math.pow(1 - u, 1.8).toDouble();
-      final p = Offset(sp.pos.dx * size.width, sp.pos.dy * size.height);
+      final p = place(sp.pos);
       _blob(canvas, p, s * 0.055 * sp.size * (0.4 + 1.6 * fade),
           palette.accent.withValues(alpha: 0.55 * fade));
       _blob(canvas, p, s * 0.010 * sp.size,
