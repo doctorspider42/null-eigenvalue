@@ -126,12 +126,15 @@ jobs:
             exit 1
           fi
           ls -lh "$APK"
-          cp "$APK" "NullEigenvalue-${{ needs.version.outputs.version }}.apk"
+          # A fixed asset name, with the version in the release title. It is
+          # what makes /releases/latest/download/<name> a stable URL, which is
+          # what the AltStore manifest and the README both point at.
+          cp "$APK" NullEigenvalue.apk
 
       - uses: actions/upload-artifact@v4
         with:
           name: android-apk
-          path: NullEigenvalue-*.apk
+          path: NullEigenvalue.apk
           if-no-files-found: error
 
   # --------------------------------------------------------------------- ios
@@ -165,11 +168,27 @@ jobs:
             find build/ios -maxdepth 3 -print
             exit 1
           fi
-          # The engine is linked into the app binary, not shipped as a dylib,
-          # so the check is for a symbol rather than for a file. A stripped
-          # ne_create is a build that launches and then cannot make a sound.
-          if ! nm -gU "$APP/Runner" 2>/dev/null | grep -q '_ne_create'; then
-            echo "::error::ne_create is not exported from the app binary - the linker stripped the engine"
+          # Dart resolves the engine at run time out of the process image, so
+          # the check is for a symbol rather than for a file. Where that symbol
+          # lives depends on how CocoaPods linked the pod: Flutter's generated
+          # Podfile uses `use_frameworks!`, which makes nulleig an embedded
+          # dynamic framework, but a static pod would put it in the app binary
+          # instead. Both are fine for dlsym; neither being true is a build
+          # that launches and then cannot make a sound.
+          echo "--- bundle ---"
+          ls -1 "$APP" || true
+          ls -1 "$APP/Frameworks" 2>/dev/null || echo "(no Frameworks)"
+          FOUND=""
+          for BIN in "$APP/Runner" "$APP"/Frameworks/*.framework/*; do
+            [ -f "$BIN" ] || continue
+            case "$BIN" in *.plist|*.png|*.nib|*.bundle) continue;; esac
+            if nm -gU "$BIN" 2>/dev/null | grep -q ' _ne_create$'; then
+              echo "ne_create found in $BIN"
+              FOUND="$BIN"
+            fi
+          done
+          if [ -z "$FOUND" ]; then
+            echo "::error::ne_create is nowhere in the bundle - the engine was not linked in"
             exit 1
           fi
           # An .ipa is a zip with the .app inside Payload/. Doing it by hand,
@@ -177,13 +196,13 @@ jobs:
           mkdir -p "$RUNNER_TEMP/ipa/Payload"
           cp -R "$APP" "$RUNNER_TEMP/ipa/Payload/"
           cd "$RUNNER_TEMP/ipa"
-          zip -qry "$GITHUB_WORKSPACE/NullEigenvalue-${{ needs.version.outputs.version }}.ipa" Payload
-          ls -lh "$GITHUB_WORKSPACE"/NullEigenvalue-*.ipa
+          zip -qry "$GITHUB_WORKSPACE/NullEigenvalue.ipa" Payload
+          ls -lh "$GITHUB_WORKSPACE/NullEigenvalue.ipa"
 
       - uses: actions/upload-artifact@v4
         with:
           name: ios-ipa
-          path: NullEigenvalue-*.ipa
+          path: NullEigenvalue.ipa
           if-no-files-found: error
 
   # ----------------------------------------------------------------- release
@@ -209,18 +228,33 @@ jobs:
           cat > notes.md <<EOF
           Built from \`${GITHUB_SHA:0:7}\`.
 
-          **iPhone** — \`NullEigenvalue-${V}.ipa\` is **unsigned**. Sign and install it
-          with [AltStore](https://altstore.io) or [Sideloadly](https://sideloadly.io)
-          using your own Apple ID; a free account works, and the app then needs
-          re-signing every seven days.
+          **iPhone** — \`NullEigenvalue.ipa\` is **unsigned**. The easiest route is to add
+          this AltStore source once and let it update itself from then on:
 
-          **Android** — \`NullEigenvalue-${V}.apk\` installs directly. It is signed with a
-          debug key, so Android will ask you to allow installation from this source.
+          \`https://doctorspider42.github.io/null-eigenvalue/altstore.json\`
+
+          Otherwise sign and install the .ipa by hand with [AltStore](https://altstore.io)
+          or [Sideloadly](https://sideloadly.io) using your own Apple ID. A free account
+          works; the app then has to be re-signed every seven days.
+
+          **Android** — \`NullEigenvalue.apk\` installs directly. It is signed with a debug
+          key, so the phone will ask you to allow installs from wherever you got it.
 
           Plays with the screen off, and takes play / pause / mood from the lock screen.
           EOF
           gh release create "v${V}" \
-            NullEigenvalue-${V}.ipa NullEigenvalue-${V}.apk \
+            NullEigenvalue.ipa NullEigenvalue.apk \
             --target "$GITHUB_SHA" \
             --title "Null Eigenvalue ${V}" \
             --notes-file notes.md
+
+  # Point the AltStore source at the release we just published. Called from
+  # here rather than triggered by the release event, because GitHub will not
+  # start a workflow from an event its own token raised.
+  altstore:
+    needs: release
+    permissions:
+      contents: write
+      pages: write
+      id-token: write
+    uses: ./.github/workflows/altstore-source.yml

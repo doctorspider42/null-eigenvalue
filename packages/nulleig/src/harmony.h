@@ -37,7 +37,7 @@
 
 namespace ne {
 
-constexpr int kMoodCount = 5;
+constexpr int kMoodCount = 6;
 
 struct Mood {
     const char* name;
@@ -53,7 +53,7 @@ struct Mood {
     float rev_size;
     float rev_mix;
     float shimmer;
-    float bell_per_min;   // at mid density
+    float bell_per_min;   // PHRASES per minute at mid density; 0 disables them
     float bell_decay;     // seconds
     float drive;
     float chorus;
@@ -66,8 +66,13 @@ struct Mood {
     float cutoff_hi;      // ... and at x = 1
 };
 
-// The five. They are not presets in the "starting point" sense - each is a
+// The six. They are not presets in the "starting point" sense - each is a
 // different instrument, and switching is the only large gesture the UI has.
+//
+// Only Halo rings. Bells were originally sprinkled through every mood and they
+// were wrong everywhere else: against a warm held chord a struck note reads as
+// an interruption however quiet it is. Halo is bright and airy enough to carry
+// them, so that is where they live.
 inline const Mood& mood_at(int i) {
     static const Mood kMoods[kMoodCount] = {
         // Kernel - the null space. As low and as still as the thing goes.
@@ -76,7 +81,7 @@ inline const Mood& mood_at(int i) {
          29, 0.0f, 38.0f, 1.7f, 330.0f,
          0.75f, 0.9f,
          19.0f, 1.15f, 0.42f, 0.04f,
-         2.6f, 5.0f,
+         0.0f, 5.0f,
          0.22f, 0.20f, 0.07f,
          6.4f, 0.62f, 0.16f,
          -0.30f, 420.0f, 3400.0f},
@@ -88,7 +93,7 @@ inline const Mood& mood_at(int i) {
          33, 0.0f, 45.0f, 1.15f, 260.0f,
          1.50f, 1.1f,
          13.0f, 0.95f, 0.44f, 0.14f,
-         6.0f, 3.4f,
+         0.0f, 3.4f,
          0.17f, 0.42f, 0.10f,
          4.2f, 0.55f, 0.22f,
          -0.05f, 750.0f, 8000.0f},
@@ -100,7 +105,7 @@ inline const Mood& mood_at(int i) {
          36, 0.0f, 50.0f, 0.95f, 220.0f,
          2.20f, 0.9f,
          24.0f, 1.25f, 0.52f, 0.62f,
-         13.0f, 4.5f,
+         4.0f, 4.5f,
          0.10f, 0.55f, 0.09f,
          3.0f, 0.66f, 0.30f,
          0.30f, 1400.0f, 14000.0f},
@@ -112,7 +117,7 @@ inline const Mood& mood_at(int i) {
          31, 0.0f, 43.0f, 0.85f, 190.0f,
          2.50f, 0.8f,
          8.5f, 0.75f, 0.38f, 0.22f,
-         9.0f, 2.2f,
+         0.0f, 2.2f,
          0.40f, 0.30f, 0.17f,
          2.25f, 0.70f, 0.32f,
          0.08f, 950.0f, 10000.0f},
@@ -124,10 +129,25 @@ inline const Mood& mood_at(int i) {
          28, 0.0f, 41.0f, 2.4f, 420.0f,
          1.15f, 0.85f,
          30.0f, 1.35f, 0.58f, 0.34f,
-         1.6f, 7.0f,
+         0.0f, 7.0f,
          0.09f, 0.36f, 0.12f,
          8.5f, 0.68f, 0.24f,
          -0.15f, 550.0f, 5200.0f},
+
+        // Entropy - the classic drone: something hums, something hisses.
+        // The noise bed is the instrument here and the pitched voices are the
+        // accompaniment, which is the reverse of every other mood. The scale
+        // is root, second and fifth only: no third, so there is no major or
+        // minor to hear, just an open interval that can be held forever.
+        {"Entropy",
+         0b0000000010000101,  // 0 2 7
+         26, 0.0f, 31.0f, 2.1f, 520.0f,
+         0.35f, 0.60f,
+         26.0f, 1.20f, 0.50f, 0.06f,
+         0.0f, 5.0f,
+         0.30f, 0.15f, 0.62f,
+         7.0f, 0.50f, 0.12f,
+         -0.15f, 300.0f, 6000.0f},
     };
     if (i < 0) i = 0;
     if (i >= kMoodCount) i = kMoodCount - 1;

@@ -27,10 +27,12 @@ Tap once to show the transport and the five moods; it hides itself again after
 a few seconds. While it is silent, tapping anywhere starts it.
 
 **Kernel** is the null space, as low and as still as the thing goes.
-**Manifold** is the warm, wide default. **Halo** is lydian, high, and the only
-mood with real shimmer. **Torsion** is tense and metallic. **Limit** is the
-piece as it stops: the fewest voices, the longest breaths and a thirty-second
-room.
+**Manifold** is the warm, wide default. **Halo** is lydian, high, shimmering,
+and the only mood that rings. **Torsion** is tense and metallic. **Limit** is
+the piece as it stops: the fewest voices, the longest breaths and a
+thirty-second room. **Entropy** is the classic drone — something hums,
+something hisses; the noise bed is the instrument and the pitched voices are
+the accompaniment, on an open fifth with no third in it at all.
 
 From a lock screen, a headphone remote or a car, **next / previous track**
 changes mood.
@@ -41,7 +43,18 @@ Every push to `main` publishes a
 [release](https://github.com/doctorspider42/null-eigenvalue/releases) with both
 builds.
 
-**iPhone.** The `.ipa` is unsigned. Sign and install it with
+**iPhone.** The `.ipa` is unsigned. The least painful route is to add this
+source to AltStore once:
+
+```
+https://doctorspider42.github.io/null-eigenvalue/altstore.json
+```
+
+From then on every push to `main` shows up on the phone as an update, with no
+cable and no computer in the loop — CI regenerates that manifest and publishes
+it as part of the same run that builds the release.
+
+Otherwise sign and install the `.ipa` by hand with
 [AltStore](https://altstore.io) or [Sideloadly](https://sideloadly.io) using
 your own Apple ID. A free account works and costs nothing; the app then has to
 be re-signed every seven days, which AltStore does by itself while it is on the

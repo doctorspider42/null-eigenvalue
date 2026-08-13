@@ -31,10 +31,21 @@ inline float breath_window(float u) {
     return 1.0f;
 }
 
-// Struck-bar partials. Not harmonic on purpose: a bell whose partials are
-// integer multiples is a synth pad with a fast decay.
-const float kBellRatio[kBellPartials] = {1.0f, 2.0f, 2.76f, 5.40f};
-const float kBellAmp[kBellPartials] = {1.0f, 0.46f, 0.30f, 0.16f};
+// Nearly harmonic, and that is a correction rather than a preference.
+//
+// The textbook struck-bar set is {1, 2, 2.76, 5.4} and it sounds like a bell
+// precisely because those partials are inharmonic. That works when a bell is
+// heard against silence or against something moving. Here it is heard against
+// a chord that has been held for a minute, and 2.76 lands about a minor tenth
+// and a bit above the fundamental - close enough to a real interval to be
+// heard as one, far enough to be out of tune with it. Every strike read as a
+// wrong note.
+//
+// So: octave, twelfth and a double octave plus a third, all consonant with
+// whatever the drone is doing, with a fraction of a percent of stretch so the
+// partials still beat against each other rather than fusing into one sine.
+const float kBellRatio[kBellPartials] = {1.0f, 2.0f, 3.006f, 5.02f};
+const float kBellAmp[kBellPartials] = {1.0f, 0.40f, 0.22f, 0.11f};
 
 }  // namespace
 
@@ -150,6 +161,9 @@ void Engine::reseed(uint32_t seed) {
     }
 
     for (int i = 0; i < kBellPool; ++i) bell_[i].on = false;
+    phrase_len_ = 0;
+    phrase_pos_ = 0;
+    phrase_timer_ = 0.0f;
 
     apply_mood(m);
 
@@ -218,7 +232,66 @@ void Engine::repitch(int vi) {
     v_chord_.fetch_add(1, std::memory_order_relaxed);
 }
 
-void Engine::fire_bell() {
+// Builds the next figure: two to four notes walking through the chord that is
+// currently sounding, in one register, a beat or so apart.
+//
+// Single isolated strikes were the first version and they were wrong in a way
+// that took someone else's ears to name: one note every twenty seconds does
+// not read as music, it reads as a notification. A short ascending or
+// descending figure through the notes already being held reads as a phrase,
+// and a phrase belongs to the piece.
+void Engine::start_phrase() {
+    // The sounding chord, low to high, without duplicates. Insertion sort
+    // because there are at most fourteen of them.
+    int set[kVoices];
+    int n = 0;
+    for (int j = 0; j < kVoices; ++j) {
+        if (voice_[j].env * voice_[j].level <= 0.10f) continue;
+        int o = voice_[j].offset;
+        bool dup = false;
+        for (int k = 0; k < n; ++k) {
+            if (set[k] == o) { dup = true; break; }
+        }
+        if (dup) continue;
+        int p = n++;
+        while (p > 0 && set[p - 1] > o) { set[p] = set[p - 1]; --p; }
+        set[p] = o;
+    }
+    if (n == 0) {
+        // Nothing audible to draw from: fall back to the top of the scale
+        // rather than invent a note outside it.
+        if (pitches_.count == 0) return;
+        n = 1;
+        set[0] = pitches_.offset[pitches_.count - 1];
+    }
+
+    int len = 2 + rng_bell_.range(3);  // 2..4
+    if (len > kPhraseMax) len = kPhraseMax;
+    int dir = rng_bell_.uni() < 0.5f ? -1 : 1;
+    int idx = rng_bell_.range(n);
+    int oct = (rng_bell_.uni() < 0.35f) ? 24 : 12;
+
+    for (int i = 0; i < len; ++i) {
+        phrase_notes_[i] = set[idx] + oct;
+        int next = idx + dir;
+        // Reflect at the ends rather than wrap: a wrap is an octave leap in
+        // the middle of a four-note figure, which is exactly the jump the
+        // phrase exists to avoid.
+        if (next < 0 || next >= n) {
+            dir = -dir;
+            next = idx + dir;
+        }
+        idx = (next < 0) ? 0 : (next >= n ? n - 1 : next);
+    }
+
+    phrase_len_ = len;
+    phrase_pos_ = 0;
+    phrase_timer_ = 0.0f;
+    phrase_gap_ = 0.30f + 0.55f * rng_bell_.uni();
+    phrase_level_ = 0.80f + 0.35f * rng_bell_.uni();
+}
+
+void Engine::fire_bell(int off, float level) {
     int slot = -1;
     float weakest = 1e9f;
     for (int i = 0; i < kBellPool; ++i) {
@@ -229,19 +302,6 @@ void Engine::fire_bell() {
     if (slot < 0) return;
 
     const Mood& m = mood_at(mood_cur_);
-
-    // Draw from what is actually sounding, transposed up out of the way of the
-    // pad. A bell on a note the drone is not playing is the one thing in this
-    // engine that can sound like a mistake.
-    int candidates[kVoices];
-    int nc = 0;
-    for (int j = 0; j < kVoices; ++j) {
-        if (voice_[j].env * voice_[j].level > 0.12f) candidates[nc++] = voice_[j].offset;
-    }
-    int off = nc > 0 ? candidates[rng_bell_.range(nc)]
-                     : (pitches_.count > 0 ? pitches_.offset[rng_bell_.range(pitches_.count)] : 0);
-    off += (rng_bell_.uni() < 0.45f) ? 24 : 12;
-
     float bright = s_bright_.z;
     float f0 = midi_hz(root_cur_ + (float)off);
     while (f0 > sr_ * 0.16f) f0 *= 0.5f;
@@ -255,13 +315,18 @@ void Engine::fire_bell() {
         b.inc[p] = f0 * kBellRatio[p] * jitter / sr_;
         if (b.inc[p] > 0.45f) b.inc[p] = 0.0f;  // above Nyquist: just drop it
         float tilt = std::pow(0.35f + 0.9f * bright, (float)p);
-        b.amp[p] = kBellAmp[p] * tilt * (0.6f + 0.5f * rng_bell_.uni());
+        b.amp[p] = kBellAmp[p] * tilt * level * (0.6f + 0.5f * rng_bell_.uni());
         float d = decay / (1.0f + 0.75f * (float)p);
         b.dec[p] = std::exp(-6.9078f / (d * sr_));
     }
+    b.env = 0.0f;
+    b.atk = 1.0f - std::exp(-1.0f / ((0.06f + 0.14f * rng_bell_.uni()) * sr_));
     pan_gains(rng_bell_.bi() * 0.85f, b.pan_l, b.pan_r);
-    b.send_rev = 0.55f + 0.5f * rng_bell_.uni();
-    b.send_dly = 0.30f + 0.5f * rng_bell_.uni();
+    // Sent much harder than it is heard directly. A bell that arrives mostly
+    // through the room is an event in the same space as the drone; a dry one
+    // is an event on top of it.
+    b.send_rev = 0.95f + 0.55f * rng_bell_.uni();
+    b.send_dly = 0.35f + 0.55f * rng_bell_.uni();
 
     spark_ = 1.0f;
 }
@@ -387,6 +452,9 @@ void Engine::control_block() {
     float air_c = 420.0f * std::pow(2.0f, 2.9f * b + 0.85f * std::sin(kTwoPi * air_phase_));
     air_svf_l_.set(clampf(air_c, 80.0f, sr_ * 0.42f), 0.55f, sr_);
     air_svf_r_.set(clampf(air_c * 1.13f, 80.0f, sr_ * 0.42f), 0.55f, sr_);
+    float air_broad = clampf(700.0f + 8500.0f * b, 300.0f, sr_ * 0.42f);
+    air_lp_l_.set_cutoff(air_broad, sr_);
+    air_lp_r_.set_cutoff(air_broad * 0.86f, sr_);
 
     // ---- root walk --------------------------------------------------------
     root_timer_ -= dt;
@@ -466,8 +534,20 @@ void Engine::control_block() {
     }
 
     // ---- bells ------------------------------------------------------------
+    // The rate is now phrases per minute, not notes per minute.
     bell_prob_ = clampf(s_bell_rate_.z / 60.0f * dt, 0.0f, 0.35f);
-    if (gate_ > 0.25f && rng_bell_.uni() < bell_prob_) fire_bell();
+    if (phrase_len_ > 0) {
+        phrase_timer_ -= dt;
+        if (phrase_timer_ <= 0.0f) {
+            fire_bell(phrase_notes_[phrase_pos_], phrase_level_);
+            phrase_level_ *= 0.87f;  // a figure that leans away as it goes
+            phrase_timer_ = phrase_gap_ * (0.85f + 0.30f * rng_bell_.uni());
+            if (++phrase_pos_ >= phrase_len_) phrase_len_ = 0;
+        }
+    } else if (gate_ > 0.25f && m.bell_per_min > 0.01f &&
+               rng_bell_.uni() < bell_prob_) {
+        start_phrase();
+    }
 
     // ---- visuals ----------------------------------------------------------
     motion_ -= motion_ * (1.0f - std::exp(-dt / 12.0f));
@@ -568,8 +648,12 @@ void Engine::render(float* out, int frames) {
 
             // -------- air bed
             if (air_level_ > 1e-4f) {
-                l += air_svf_l_.band(rng_noise_.bi()) * air_level_;
-                r += air_svf_r_.band(rng_noise_.bi()) * air_level_;
+                float nl = rng_noise_.bi();
+                float nr = rng_noise_.bi();
+                l += (air_svf_l_.band(nl) * 0.80f + air_lp_l_.process(nl) * 1.15f) *
+                     air_level_;
+                r += (air_svf_r_.band(nr) * 0.80f + air_lp_r_.process(nr) * 1.15f) *
+                     air_level_;
             }
 
             // -------- drive and master filter
@@ -604,9 +688,11 @@ void Engine::render(float* out, int frames) {
                     bell.on = false;
                     continue;
                 }
-                float sl = s * bell.pan_l * 0.5f, sr2 = s * bell.pan_r * 0.5f;
-                bl += sl;
-                br += sr2;
+                bell.env += bell.atk * (1.0f - bell.env);
+                s *= bell.env;
+                float sl = s * bell.pan_l * 0.42f, sr2 = s * bell.pan_r * 0.42f;
+                bl += sl * 0.38f;
+                br += sr2 * 0.38f;
                 brl += sl * bell.send_rev;
                 brr += sr2 * bell.send_rev;
                 bdl += sl * bell.send_dly;

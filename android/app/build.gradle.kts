@@ -7,7 +7,10 @@ plugins {
 android {
     namespace = "com.nulleigenvalue.null_eigenvalue"
     compileSdk = flutter.compileSdkVersion
-    ndkVersion = flutter.ndkVersion
+    // Pinned, and pinned to the same value as packages/nulleig/android: two
+    // modules asking for two NDKs means Gradle needs both installed, and CI
+    // installs exactly one.
+    ndkVersion = "27.0.12077973"
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17

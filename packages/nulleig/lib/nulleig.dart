@@ -16,8 +16,11 @@ import 'package:ffi/ffi.dart';
 /// Register slices published for the visuals, low to high.
 const int neBands = 8;
 
-/// How many moods the engine knows. Kept in step with `NE_MOOD_COUNT`.
-const int neMoodCount = 5;
+/// How many moods the engine knows. Must equal `NE_MOOD_COUNT` in nulleig.h;
+/// a test in the app asserts that this and the palette list agree, which is
+/// the only thing standing between a new mood in C++ and a range error the
+/// first time someone taps the last dot.
+const int neMoodCount = 6;
 
 /// Mirrors `ne_vis`. Every field is a float except the last, so the layout is
 /// the obvious one and needs no padding.
@@ -113,10 +116,21 @@ typedef _Elapsed = double Function(Pointer<Void>);
 typedef _ElapsedC = Double Function(Pointer<Void>);
 
 DynamicLibrary _open() {
-  // On iOS the engine is compiled into the app binary by the podspec rather
-  // than shipped as a dylib, so there is nothing to open - the symbols are
-  // already in the process.
-  if (Platform.isIOS || Platform.isMacOS) return DynamicLibrary.process();
+  if (Platform.isIOS || Platform.isMacOS) {
+    // Where the engine ends up on Apple platforms is CocoaPods' decision, not
+    // ours. Flutter's generated Podfile uses `use_frameworks!`, so the pod
+    // becomes an embedded dynamic framework and its symbols are visible to
+    // dlsym across the whole process; a statically linked pod would put them
+    // in the app binary instead. Probe for the first case rather than assume
+    // it, because assuming wrong is a crash on launch with no useful message.
+    final process = DynamicLibrary.process();
+    try {
+      process.lookup<NativeFunction<_CreateC>>('ne_create');
+      return process;
+    } on ArgumentError {
+      return DynamicLibrary.open('nulleig.framework/nulleig');
+    }
+  }
   if (Platform.isAndroid || Platform.isLinux) {
     return DynamicLibrary.open('libnulleig.so');
   }

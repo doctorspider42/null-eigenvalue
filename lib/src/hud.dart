@@ -32,20 +32,39 @@ class Hud extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: <Widget>[
         _Transport(playing: playing, colour: palette.accent, onTap: onToggle),
-        const SizedBox(height: 30),
+        const SizedBox(height: 26),
+        // Dots, not names. Six names at a readable size do not fit across a
+        // phone, and the obvious fixes - a scroller, or two rows - both turn
+        // the one piece of chrome in the app into a menu. A row of dots with
+        // the current name under it fits any width, keeps every mood one tap
+        // away, and stays quiet.
         Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: <Widget>[
             for (var i = 0; i < neMoodCount; i++)
-              _MoodChip(
-                label: MoodPalette.all[i].name,
+              _MoodDot(
                 selected: i == mood,
                 colour: palette.accent,
                 onTap: () => onMood(i),
               ),
           ],
         ),
-        const SizedBox(height: 18),
+        const SizedBox(height: 14),
+        AnimatedSwitcher(
+          duration: const Duration(milliseconds: 380),
+          child: Text(
+            MoodPalette.all[mood].name.toUpperCase(),
+            key: ValueKey<int>(mood),
+            style: TextStyle(
+              fontSize: 12,
+              height: 1.0,
+              letterSpacing: 4.6,
+              fontWeight: FontWeight.w400,
+              color: palette.accent.withValues(alpha: 0.92),
+            ),
+          ),
+        ),
+        const SizedBox(height: 12),
         Text(
           '${rootHz.toStringAsFixed(1)} Hz',
           style: TextStyle(
@@ -53,7 +72,7 @@ class Hud extends StatelessWidget {
             height: 1.2,
             letterSpacing: 2.4,
             fontWeight: FontWeight.w300,
-            color: Colors.white.withValues(alpha: 0.28),
+            color: Colors.white.withValues(alpha: 0.26),
           ),
         ),
       ],
@@ -61,15 +80,13 @@ class Hud extends StatelessWidget {
   }
 }
 
-class _MoodChip extends StatelessWidget {
-  const _MoodChip({
-    required this.label,
+class _MoodDot extends StatelessWidget {
+  const _MoodDot({
     required this.selected,
     required this.colour,
     required this.onTap,
   });
 
-  final String label;
   final bool selected;
   final Color colour;
   final VoidCallback onTap;
@@ -79,41 +96,22 @@ class _MoodChip extends StatelessWidget {
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: onTap,
-      child: Padding(
-        // Generous horizontal padding: these are 10-point words and they still
-        // have to be a comfortable target for a thumb.
-        padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 10),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            AnimatedContainer(
-              duration: const Duration(milliseconds: 320),
-              curve: Curves.easeOut,
-              width: selected ? 5 : 3,
-              height: selected ? 5 : 3,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: selected
-                    ? colour
-                    : Colors.white.withValues(alpha: 0.30),
-              ),
+      // A 5-pixel dot inside a 44-pixel target: the thing you aim at is the
+      // size a thumb needs, the thing you see is the size the picture needs.
+      child: SizedBox(
+        width: 44,
+        height: 34,
+        child: Center(
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 320),
+            curve: Curves.easeOut,
+            width: selected ? 7 : 4,
+            height: selected ? 7 : 4,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: selected ? colour : Colors.white.withValues(alpha: 0.26),
             ),
-            const SizedBox(height: 9),
-            AnimatedDefaultTextStyle(
-              duration: const Duration(milliseconds: 320),
-              curve: Curves.easeOut,
-              style: TextStyle(
-                fontSize: 10,
-                height: 1.0,
-                letterSpacing: 1.7,
-                fontWeight: FontWeight.w400,
-                color: selected
-                    ? colour
-                    : Colors.white.withValues(alpha: 0.34),
-              ),
-              child: Text(label.toUpperCase()),
-            ),
-          ],
+          ),
         ),
       ),
     );

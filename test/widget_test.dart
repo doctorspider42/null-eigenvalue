@@ -27,6 +27,7 @@ void main() {
       'Halo',
       'Torsion',
       'Limit',
+      'Entropy',
     ];
     expect(MoodPalette.all.map((p) => p.name).toList(), expected);
   });

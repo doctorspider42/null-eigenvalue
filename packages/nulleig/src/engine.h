@@ -83,6 +83,13 @@ struct Bell {
     float dec[kBellPartials] = {};
     float pan_l = 0.7f, pan_r = 0.7f;
     float send_rev = 0.8f, send_dly = 0.5f;
+    // A struck bar starts at full amplitude on its first sample, and that
+    // instantaneous edge is what makes a sparse event read as a *plink* -
+    // something landing on top of the music rather than emerging out of it.
+    // A tenth of a second of exponential rise fixes it completely and costs
+    // one multiply.
+    float env = 0.0f;
+    float atk = 0.02f;
 };
 
 class Engine {
@@ -119,7 +126,8 @@ class Engine {
     void reseed(uint32_t seed);
     void repitch(int vi);
     void apply_mood(const Mood& m);
-    void fire_bell();
+    void start_phrase();
+    void fire_bell(int offset, float level);
     void publish_vis();
 
     // ------------------------------------------------------------- constants
@@ -183,6 +191,18 @@ class Engine {
     float bell_prob_ = 0.0f, shimmer_ = 0.0f;
     float rev_predelay_ = 0.0f;
 
+    // Bells arrive as short phrases rather than as isolated events. One note
+    // every twenty seconds is a drip; three or four notes walking through the
+    // chord is a figure, and a figure is something the ear can file away
+    // instead of flinching at.
+    static constexpr int kPhraseMax = 6;
+    int phrase_notes_[kPhraseMax] = {};
+    int phrase_len_ = 0;
+    int phrase_pos_ = 0;
+    float phrase_timer_ = 0.0f;
+    float phrase_gap_ = 0.5f;
+    float phrase_level_ = 1.0f;
+
     // ------------------------------------------------------------------- dsp
     Svf filt_l_, filt_r_;
     Chorus chorus_;
@@ -191,7 +211,11 @@ class Engine {
     Limiter limiter_;
     Tilt tilt_l_, tilt_r_;
     OnePole bass_l_, bass_r_;
+    // The air bed is two layers, because "noise" on its own is either a
+    // whistle or a hiss and a real one is both: a resonant band that wanders
+    // a couple of octaves, and a broad shelf under it that is simply the room.
     Svf air_svf_l_, air_svf_r_;
+    OnePole air_lp_l_, air_lp_r_;
     float air_phase_ = 0.0f;
     OnePole rev_send_lp_;
 

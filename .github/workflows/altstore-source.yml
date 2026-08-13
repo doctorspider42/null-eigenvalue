@@ -1,0 +1,155 @@
+name: AltStore source
+
+# Keeps altstore.json in step with the newest release, so a phone that has this
+# source added sees the update on its own - no cable, no computer, no Actions
+# login.
+#
+# NOT triggered by `release: published`. GitHub deliberately refuses to start a
+# workflow from an event raised by GITHUB_TOKEN, and the release is created by
+# build.yml using exactly that token - so a release trigger here would simply
+# never fire. build.yml calls this instead; workflow_dispatch stays available
+# for repairing a manifest by hand.
+on:
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+# One deploy at a time. Two pushes in quick succession would otherwise race,
+# and the loser could publish the older manifest last.
+concurrency:
+  group: altstore-pages
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      # The releases API is the authoritative record of what exists - tags,
+      # dates and asset sizes together, in one call - and the manifest has to
+      # carry the FULL history, because AltStore resolves the installed build
+      # against it. A latest-only list lets "add source" work while every
+      # later Update fails.
+      - name: Regenerate altstore.json
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh api "repos/${{ github.repository }}/releases" --paginate > releases.json
+          node tools/altstore/make-source.mjs releases.json
+          node -e 'JSON.parse(require("fs").readFileSync("altstore.json"))'
+
+      - name: Commit it
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- altstore.json; then
+            echo "altstore.json already current"
+            exit 0
+          fi
+          git config user.name  'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          git add altstore.json
+          # [skip ci] so committing the manifest cannot start another build,
+          # which would cut another release, which would regenerate the
+          # manifest.
+          git commit -m "AltStore source: $(node -e 'console.log(require("./altstore.json").apps[0].version)') [skip ci]"
+          git push
+
+      # Green has to mean "a phone can install from it", not "a file was
+      # pushed". Between the two sit a CDN and release assets that must be
+      # reachable at exactly the size the manifest promises.
+      - name: Check every advertised download against the real asset
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          node -e '
+            const s = require("./altstore.json");
+            let bad = 0;
+            for (const app of s.apps) {
+              for (const v of app.versions) {
+                if (!/^https:\/\/github\.com\//.test(v.downloadURL)) {
+                  console.error("not a github URL: " + v.downloadURL); bad++;
+                }
+              }
+            }
+            process.exit(bad ? 1 : 0);'
+          for url in $(node -e 'console.log(require("./altstore.json").apps[0].versions.map(v=>v.downloadURL).join(" "))'); do
+            size=$(curl -sIL "$url" | awk -F': ' 'tolower($1)=="content-length"{print $2}' | tr -d "\r" | tail -1)
+            echo "$url -> ${size:-unreachable}"
+            if [ -z "${size:-}" ]; then
+              echo "::error::$url is not downloadable"
+              exit 1
+            fi
+          done
+
+      # What AltStore actually reads. The file stays in the repo as the record
+      # of what was published; the URL a phone points at is this one.
+      - name: Assemble the site
+        run: |
+          set -euo pipefail
+          mkdir -p site
+          cp altstore.json site/altstore.json
+          cp "ios/Runner/Assets.xcassets/AppIcon.appiconset/Icon-App-1024x1024@1x.png" site/icon.png
+          node -e '
+            const a = require("./altstore.json").apps[0];
+            const rows = a.versions.map(v =>
+              `<li><b>${v.version}</b> — ${new Date(v.date).toISOString().slice(0,10)}</li>`).join("");
+            require("fs").writeFileSync("site/index.html", `<!doctype html>
+            <meta charset="utf-8"><title>Null Eigenvalue — AltStore source</title>
+            <meta name="viewport" content="width=device-width,initial-scale=1">
+            <style>body{font:16px/1.6 -apple-system,system-ui,sans-serif;max-width:38rem;margin:3rem auto;padding:0 1.2rem;background:#05070b;color:#c9d4de}
+            a{color:#5ce0cc}code{background:#101822;padding:.15em .45em;border-radius:.3em;word-break:break-all}
+            img{width:96px;border-radius:22px;display:block}</style>
+            <img src="icon.png" alt="">
+            <h1>Null Eigenvalue</h1>
+            <p>${a.subtitle}. Add this URL as a source in AltStore:</p>
+            <p><code>https://doctorspider42.github.io/null-eigenvalue/altstore.json</code></p>
+            <h2>Releases</h2><ul>${rows}</ul>
+            <p><a href="https://github.com/doctorspider42/null-eigenvalue">Source code and instructions</a></p>`);'
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy:
+    needs: update
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
+
+      # Same rule one layer out: wait until the page really carries this
+      # version, because Pages fronts a CDN that will happily serve the old
+      # manifest for several minutes after a successful deploy.
+      - name: Wait until Pages serves it
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          want=$(gh api "repos/${{ github.repository }}/contents/altstore.json" --jq '.content' \
+                 | base64 -d | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>console.log(JSON.parse(s).apps[0].version))')
+          url="https://doctorspider42.github.io/null-eigenvalue/altstore.json"
+          for attempt in $(seq 1 30); do
+            curl -fsSL -H 'Cache-Control: no-cache' "$url" -o served.json || true
+            got=$(node -e 'try{console.log(require("./served.json").apps[0].version)}catch(e){console.log("unreadable")}')
+            echo "attempt $attempt: Pages serves $got, want $want"
+            if [ "$got" = "$want" ]; then exit 0; fi
+            sleep 10
+          done
+          echo "::error::Pages never served $want"
+          exit 1

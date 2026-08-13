@@ -67,6 +67,15 @@ class MoodPalette {
       mid: Color(0xFF4C6178),
       accent: Color(0xFFB6C9DA),
     ),
+    // Entropy is the noise mood, so it is the one palette with almost no hue
+    // in it: warm grey over near-black, the colour of tape and room tone.
+    MoodPalette(
+      name: 'Entropy',
+      bg: Color(0xFF070707),
+      deep: Color(0xFF262322),
+      mid: Color(0xFF6B6560),
+      accent: Color(0xFFE3DDD4),
+    ),
   ];
 
   static MoodPalette lerp(MoodPalette a, MoodPalette b, double t) {

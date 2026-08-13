@@ -1,0 +1,18 @@
+# LF everywhere. The repo is developed on Windows and built on Linux and
+# macOS runners: a CRLF in gradlew or in a shell block inside a workflow is a
+# build failure with a confusing message, not a cosmetic difference.
+* text=auto eol=lf
+
+*.bat text eol=crlf
+*.ps1 text eol=crlf
+
+*.png binary
+*.jpg binary
+*.jar binary
+*.wav binary
+*.ipa binary
+*.apk binary
+
+# One 4 MB single-header library. Keeping it out of diffs makes the history of
+# the code we actually wrote readable.
+packages/nulleig/src/third_party/miniaudio.h linguist-vendored

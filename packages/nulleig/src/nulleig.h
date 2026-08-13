@@ -78,9 +78,9 @@ NE_API void ne_render(ne_engine* e, float* out, int frames);
 
 /* ---------------------------------------------------------------- parameters */
 
-#define NE_MOOD_COUNT 5
+#define NE_MOOD_COUNT 6
 
-/* 0 Kernel, 1 Manifold, 2 Halo, 3 Torsion, 4 Limit. Out-of-range is clamped.
+/* 0 Kernel, 1 Manifold, 2 Halo, 3 Torsion, 4 Limit, 5 Entropy. Clamped.
  * A change is not instant: the new mood's harmony is walked into over the next
  * minute or so rather than cut to, because a drone that jump-cuts is a
  * different piece rather than the same one in a new light. */
