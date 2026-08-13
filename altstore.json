@@ -14,13 +14,22 @@
       "iconURL": "https://doctorspider42.github.io/null-eigenvalue/icon.png",
       "tintColor": "5CE0CC",
       "screenshots": [],
-      "version": "0.1.3",
-      "versionDate": "2026-08-13T22:56:09Z",
-      "versionDescription": "Built from `1688d69`.\n\n**iPhone** — `NullEigenvalue.ipa` is **unsigned**. The easiest route is to add\nthis AltStore source once and let it update itself from then on:\n\n`https://doctorspider42.github.io/null-eigenvalue/altstore.json`\n\nOtherwise sign and install the .ipa by hand with [AltStore](https://altstore.io)\nor [Sideloadly](https://sideloadly.io) using your own Apple ID. A free account\nworks; the app then has to be re-signed every seven days.\n\n**Android** — `NullEigenvalue.apk` installs directly. It is signed with a debug\nkey, so the phone will ask you to allow installs from wherever you got it.\n\nPlays with the screen off, and takes play / pause / mood from the lock screen.",
+      "version": "0.1.4",
+      "versionDate": "2026-08-13T23:05:14Z",
+      "versionDescription": "Built from `509ddcc`.\n\n**iPhone** — `NullEigenvalue.ipa` is **unsigned**. The easiest route is to add\nthis AltStore source once and let it update itself from then on:\n\n`https://doctorspider42.github.io/null-eigenvalue/altstore.json`\n\nOtherwise sign and install the .ipa by hand with [AltStore](https://altstore.io)\nor [Sideloadly](https://sideloadly.io) using your own Apple ID. A free account\nworks; the app then has to be re-signed every seven days.\n\n**Android** — `NullEigenvalue.apk` installs directly. It is signed with a debug\nkey, so the phone will ask you to allow installs from wherever you got it.\n\nPlays with the screen off, and takes play / pause / mood from the lock screen.",
       "downloadURL": "https://github.com/doctorspider42/null-eigenvalue/releases/latest/download/NullEigenvalue.ipa",
-      "size": 7399309,
+      "size": 7399308,
       "minOSVersion": "15.0",
       "versions": [
+        {
+          "version": "0.1.4",
+          "buildVersion": "4",
+          "date": "2026-08-13T23:05:14Z",
+          "localizedDescription": "Built from `509ddcc`.\n\n**iPhone** — `NullEigenvalue.ipa` is **unsigned**. The easiest route is to add\nthis AltStore source once and let it update itself from then on:\n\n`https://doctorspider42.github.io/null-eigenvalue/altstore.json`\n\nOtherwise sign and install the .ipa by hand with [AltStore](https://altstore.io)\nor [Sideloadly](https://sideloadly.io) using your own Apple ID. A free account\nworks; the app then has to be re-signed every seven days.\n\n**Android** — `NullEigenvalue.apk` installs directly. It is signed with a debug\nkey, so the phone will ask you to allow installs from wherever you got it.\n\nPlays with the screen off, and takes play / pause / mood from the lock screen.",
+          "downloadURL": "https://github.com/doctorspider42/null-eigenvalue/releases/download/v0.1.4/NullEigenvalue.ipa",
+          "size": 7399308,
+          "minOSVersion": "15.0"
+        },
         {
           "version": "0.1.3",
           "buildVersion": "3",
