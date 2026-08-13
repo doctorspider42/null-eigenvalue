@@ -1,0 +1,226 @@
+name: build
+
+# Every push to main cuts a release. That is deliberate: the app is installed
+# by sideload, and a sideload needs a plain public URL to a file - a workflow
+# artifact can only be fetched by a logged-in browser, which a phone is not.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  FLUTTER_VERSION: '3.47.0'
+  # Pinned rather than taken from flutter.ndkVersion so that the runner can
+  # install exactly what Gradle is about to ask for, instead of failing halfway
+  # through a build to tell us.
+  NDK_VERSION: '27.0.12077973'
+
+jobs:
+  # ---------------------------------------------------------------- version
+  # One place decides what this build is called. The patch number is the run
+  # number, so every push to main is a strictly newer version than the last -
+  # which is what AltStore compares to decide whether to offer an update.
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+      build: ${{ steps.v.outputs.build }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: v
+        run: |
+          set -euo pipefail
+          BASE=$(grep -m1 '^version:' pubspec.yaml | sed 's/version:[[:space:]]*//' | cut -d+ -f1)
+          MINOR=$(echo "$BASE" | cut -d. -f1,2)
+          echo "version=${MINOR}.${GITHUB_RUN_NUMBER}" >> "$GITHUB_OUTPUT"
+          echo "build=${GITHUB_RUN_NUMBER}" >> "$GITHUB_OUTPUT"
+          echo "building ${MINOR}.${GITHUB_RUN_NUMBER}"
+
+  # ------------------------------------------------------------------ checks
+  # Runs in about a minute and catches the ordinary mistakes without waiting
+  # for a macOS runner. The DSP part is the interesting one: it renders the
+  # real engine and measures the result, so a change that makes the
+  # synthesizer clip, produce a NaN or fall silent fails here rather than in
+  # someone's headphones.
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      - run: flutter analyze
+      - run: flutter test
+
+      - name: Build the offline renderer
+        run: |
+          cmake -S tools/render -B tools/render/build -DCMAKE_BUILD_TYPE=Release
+          cmake --build tools/render/build -j
+
+      - name: Render and measure every mood
+        run: |
+          set -euo pipefail
+          for m in 0 1 2 3 4; do
+            ./tools/render/build/nulleig_render "/tmp/mood$m.wav" 45 --mood "$m"
+          done
+          # The tour walks both axes and every mood transition, which is where
+          # a synthesizer usually breaks.
+          ./tools/render/build/nulleig_render /tmp/tour.wav 120 --tour
+
+      - name: Keep the audio for listening
+        uses: actions/upload-artifact@v4
+        with:
+          name: audio-preview
+          path: /tmp/*.wav
+          retention-days: 7
+
+  # ----------------------------------------------------------------- android
+  android:
+    runs-on: ubuntu-latest
+    needs: version
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Install the NDK
+        run: |
+          set -euo pipefail
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "ndk;${NDK_VERSION}" "cmake;3.22.1"
+
+      - run: flutter pub get
+      - name: Build the APK
+        run: |
+          flutter build apk --release \
+            --build-name=${{ needs.version.outputs.version }} \
+            --build-number=${{ needs.version.outputs.build }}
+
+      - name: Confirm the engine is actually in the APK
+        run: |
+          set -euo pipefail
+          APK=build/app/outputs/flutter-apk/app-release.apk
+          # An APK missing libnulleig.so still installs and still opens - and
+          # then shows "the synthesis engine did not load". Catch it here.
+          if ! unzip -l "$APK" | grep -q 'lib/arm64-v8a/libnulleig.so'; then
+            echo "::error::libnulleig.so is not in the APK"
+            unzip -l "$APK" | grep 'lib/' || true
+            exit 1
+          fi
+          ls -lh "$APK"
+          cp "$APK" "NullEigenvalue-${{ needs.version.outputs.version }}.apk"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android-apk
+          path: NullEigenvalue-*.apk
+          if-no-files-found: error
+
+  # --------------------------------------------------------------------- ios
+  # Unsigned. There are no Apple credentials in this repo and there is not
+  # going to be: the app is sideloaded, and AltStore or Sideloadly signs it
+  # with the user's own free Apple ID at install time.
+  ios:
+    runs-on: macos-15
+    needs: version
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+      - run: flutter pub get
+
+      - name: Build (unsigned)
+        run: |
+          flutter build ios --release --no-codesign \
+            --build-name=${{ needs.version.outputs.version }} \
+            --build-number=${{ needs.version.outputs.build }}
+
+      - name: Package an .ipa
+        run: |
+          set -euo pipefail
+          APP=build/ios/iphoneos/Runner.app
+          if [ ! -d "$APP" ]; then
+            echo "::error::no Runner.app - the build did not produce one"
+            find build/ios -maxdepth 3 -print
+            exit 1
+          fi
+          # The engine is linked into the app binary, not shipped as a dylib,
+          # so the check is for a symbol rather than for a file. A stripped
+          # ne_create is a build that launches and then cannot make a sound.
+          if ! nm -gU "$APP/Runner" 2>/dev/null | grep -q '_ne_create'; then
+            echo "::error::ne_create is not exported from the app binary - the linker stripped the engine"
+            exit 1
+          fi
+          # An .ipa is a zip with the .app inside Payload/. Doing it by hand,
+          # rather than with -exportArchive, is what keeps this signing-free.
+          mkdir -p "$RUNNER_TEMP/ipa/Payload"
+          cp -R "$APP" "$RUNNER_TEMP/ipa/Payload/"
+          cd "$RUNNER_TEMP/ipa"
+          zip -qry "$GITHUB_WORKSPACE/NullEigenvalue-${{ needs.version.outputs.version }}.ipa" Payload
+          ls -lh "$GITHUB_WORKSPACE"/NullEigenvalue-*.ipa
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ios-ipa
+          path: NullEigenvalue-*.ipa
+          if-no-files-found: error
+
+  # ----------------------------------------------------------------- release
+  release:
+    runs-on: ubuntu-latest
+    needs: [version, checks, android, ios]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: android-apk
+      - uses: actions/download-artifact@v4
+        with:
+          name: ios-ipa
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          V: ${{ needs.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          cat > notes.md <<EOF
+          Built from \`${GITHUB_SHA:0:7}\`.
+
+          **iPhone** — \`NullEigenvalue-${V}.ipa\` is **unsigned**. Sign and install it
+          with [AltStore](https://altstore.io) or [Sideloadly](https://sideloadly.io)
+          using your own Apple ID; a free account works, and the app then needs
+          re-signing every seven days.
+
+          **Android** — \`NullEigenvalue-${V}.apk\` installs directly. It is signed with a
+          debug key, so Android will ask you to allow installation from this source.
+
+          Plays with the screen off, and takes play / pause / mood from the lock screen.
+          EOF
+          gh release create "v${V}" \
+            NullEigenvalue-${V}.ipa NullEigenvalue-${V}.apk \
+            --target "$GITHUB_SHA" \
+            --title "Null Eigenvalue ${V}" \
+            --notes-file notes.md

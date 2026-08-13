@@ -1,0 +1,32 @@
+name: null_eigenvalue
+description: "A generative drone instrument. One screen, five moods, no end."
+publish_to: 'none'
+
+# The tag CI cuts on each push to main is derived from this, so the version
+# here is the version on the phone and in the release.
+version: 0.1.0+1
+
+environment:
+  sdk: ^3.13.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # The synthesis engine: C++ behind a Dart FFI binding, in this repo.
+  nulleig:
+    path: packages/nulleig
+
+  # Lock screen, Control Centre, notification, headphone buttons, car.
+  audio_service: ^0.18.18
+
+  # Remembers the mood and the field position between launches.
+  shared_preferences: ^2.3.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true
