@@ -1,0 +1,50 @@
+{
+  "name": "Null Eigenvalue",
+  "identifier": "com.nulleigenvalue.nullEigenvalue.source",
+  "subtitle": "A generative drone that runs with the screen off",
+  "description": "Releases of Null Eigenvalue.",
+  "website": "https://github.com/doctorspider42/null-eigenvalue",
+  "apps": [
+    {
+      "name": "Null Eigenvalue",
+      "bundleIdentifier": "com.nulleigenvalue.nullEigenvalue",
+      "developerName": "doctorspider42",
+      "subtitle": "Generative drone and ambient, endlessly",
+      "localizedDescription": "A generative drone instrument. It synthesises continuously - nothing is\nstreamed and nothing is a loop - and it keeps playing with the screen off,\nwith play, pause and mood change on the lock screen.\n\nDrag anywhere. Left to right is brightness, subterranean at one edge and\nglassy at the other; down to up is density, from a bare drone to four\noctaves of moving voices. Tap once for the transport and the five moods;\nit hides itself again after a few seconds.\n\nFourteen voices breathe over a fixed root on periods spaced by the golden\nratio, so no two are commensurable and the texture never repeats. Each one\ntakes a new pitch while it is silent, chosen by how it sounds against\nwhatever is currently audible - so the harmony moves without you ever\nhearing it change.",
+      "iconURL": "https://doctorspider42.github.io/null-eigenvalue/icon.png",
+      "tintColor": "5CE0CC",
+      "screenshots": [],
+      "version": "0.1.3",
+      "versionDate": "2026-08-13T22:56:09Z",
+      "versionDescription": "Built from `1688d69`.\n\n**iPhone** — `NullEigenvalue.ipa` is **unsigned**. The easiest route is to add\nthis AltStore source once and let it update itself from then on:\n\n`https://doctorspider42.github.io/null-eigenvalue/altstore.json`\n\nOtherwise sign and install the .ipa by hand with [AltStore](https://altstore.io)\nor [Sideloadly](https://sideloadly.io) using your own Apple ID. A free account\nworks; the app then has to be re-signed every seven days.\n\n**Android** — `NullEigenvalue.apk` installs directly. It is signed with a debug\nkey, so the phone will ask you to allow installs from wherever you got it.\n\nPlays with the screen off, and takes play / pause / mood from the lock screen.",
+      "downloadURL": "https://github.com/doctorspider42/null-eigenvalue/releases/latest/download/NullEigenvalue.ipa",
+      "size": 7399309,
+      "minOSVersion": "15.0",
+      "versions": [
+        {
+          "version": "0.1.3",
+          "buildVersion": "3",
+          "date": "2026-08-13T22:56:09Z",
+          "localizedDescription": "Built from `1688d69`.\n\n**iPhone** — `NullEigenvalue.ipa` is **unsigned**. The easiest route is to add\nthis AltStore source once and let it update itself from then on:\n\n`https://doctorspider42.github.io/null-eigenvalue/altstore.json`\n\nOtherwise sign and install the .ipa by hand with [AltStore](https://altstore.io)\nor [Sideloadly](https://sideloadly.io) using your own Apple ID. A free account\nworks; the app then has to be re-signed every seven days.\n\n**Android** — `NullEigenvalue.apk` installs directly. It is signed with a debug\nkey, so the phone will ask you to allow installs from wherever you got it.\n\nPlays with the screen off, and takes play / pause / mood from the lock screen.",
+          "downloadURL": "https://github.com/doctorspider42/null-eigenvalue/releases/download/v0.1.3/NullEigenvalue.ipa",
+          "size": 7399309,
+          "minOSVersion": "15.0"
+        },
+        {
+          "version": "0.1.2",
+          "buildVersion": "2",
+          "date": "2026-08-13T22:47:43Z",
+          "localizedDescription": "Built from `ee1f242`.\n\n**iPhone** — `NullEigenvalue.ipa` is **unsigned**. The easiest route is to add\nthis AltStore source once and let it update itself from then on:\n\n`https://doctorspider42.github.io/null-eigenvalue/altstore.json`\n\nOtherwise sign and install the .ipa by hand with [AltStore](https://altstore.io)\nor [Sideloadly](https://sideloadly.io) using your own Apple ID. A free account\nworks; the app then has to be re-signed every seven days.\n\n**Android** — `NullEigenvalue.apk` installs directly. It is signed with a debug\nkey, so the phone will ask you to allow installs from wherever you got it.\n\nPlays with the screen off, and takes play / pause / mood from the lock screen.",
+          "downloadURL": "https://github.com/doctorspider42/null-eigenvalue/releases/download/v0.1.2/NullEigenvalue.ipa",
+          "size": 7398964,
+          "minOSVersion": "15.0"
+        }
+      ],
+      "appPermissions": {
+        "entitlements": [],
+        "privacy": {}
+      }
+    }
+  ],
+  "news": []
+}
