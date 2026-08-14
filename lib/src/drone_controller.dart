@@ -33,6 +33,13 @@ class DroneController extends ChangeNotifier {
   SharedPreferences? _prefs;
   Directory? _tmp;
 
+  /// Whether AudioService.init came up. Null until main() has tried. The
+  /// failure is deliberately survivable - the app still sounds - but it is
+  /// exactly the difference between "no lock-screen controls because iOS said
+  /// no" and "no lock-screen controls because we never asked", so the
+  /// diagnostics line wants to know.
+  bool? mediaSessionOk;
+
   int get mood => _mood;
   int get previousMood => _prevMood;
   double get moodBlend => _moodBlend;
@@ -85,6 +92,14 @@ class DroneController extends ChangeNotifier {
   }
 
   DroneStatus status() => engine.status();
+
+  /// The engine's own idea of whether it is playing, read back through FFI
+  /// rather than mirrored from [_playing]. If these two ever disagree, the
+  /// set_playing store is not reaching the synthesizer, and that is worth a
+  /// line on screen.
+  bool get enginePlaying => engine.playing;
+
+  String sessionInfo() => engine.sessionInfo();
 
   void _save() {
     _prefs?.setInt('mood', _mood);

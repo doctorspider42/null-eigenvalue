@@ -12,10 +12,18 @@
 #include "nulleig.h"
 
 #include <atomic>
+#include <cstdio>
 #include <cstdlib>
 #include <new>
 
 #include "engine.h"
+
+#if defined(__APPLE__)
+#include <TargetConditionals.h>
+#if TARGET_OS_IPHONE && defined(__OBJC__)
+#import <AVFoundation/AVFoundation.h>
+#endif
+#endif
 
 #ifdef NE_WITH_MINIAUDIO
 #include <chrono>
@@ -131,9 +139,12 @@ NE_API int ne_start(ne_engine* e) {
         // than a competing one. Both saying "playback" means the order they
         // run in cannot change the answer.
         cfg.coreaudio.sessionCategory = ma_ios_session_category_playback;
-        cfg.coreaudio.sessionCategoryOptions =
-            ma_ios_session_category_option_allow_bluetooth_a2dp |
-            ma_ios_session_category_option_allow_air_play;
+        // No category options. AllowBluetoothA2DP and AllowAirPlay are
+        // documented as valid only with playAndRecord - with playback both
+        // routes are already allowed by default, so at best the flags are
+        // noise and at worst they are the reason setCategory refuses on some
+        // OS version, which here would surface as ctx failing.
+        cfg.coreaudio.sessionCategoryOptions = 0;
         // Leave the session active when the device is torn down. Deactivating
         // it is what makes the lock-screen controls disappear.
         cfg.coreaudio.noAudioSessionDeactivate = MA_TRUE;
@@ -248,6 +259,43 @@ NE_API void ne_get_status(ne_engine* e, ne_status* out) {
     out->device_state = -1;
 #endif
 }
+NE_API void ne_session_info(char* out, int cap) {
+    if (out == nullptr || cap <= 0) return;
+    out[0] = '\0';
+#if defined(__APPLE__) && TARGET_OS_IPHONE && defined(__OBJC__)
+    // Compiled as Objective-C++ on iOS (the pod pulls this file in through an
+    // .mm forwarder), so the session can simply be asked. Everything here is
+    // a read; nothing below can change the audio state.
+    @autoreleasepool {
+        AVAudioSession* session = [AVAudioSession sharedInstance];
+        NSString* c = session.category;
+        const char* cat = "othercat";
+        if ([c isEqualToString:AVAudioSessionCategoryPlayback]) {
+            cat = "playback";
+        } else if ([c isEqualToString:AVAudioSessionCategoryAmbient]) {
+            cat = "ambient";
+        } else if ([c isEqualToString:AVAudioSessionCategorySoloAmbient]) {
+            cat = "soloambient";
+        } else if ([c isEqualToString:AVAudioSessionCategoryPlayAndRecord]) {
+            cat = "playandrecord";
+        }
+        NSMutableArray<NSString*>* ports = [NSMutableArray array];
+        for (AVAudioSessionPortDescription* p in session.currentRoute.outputs) {
+            [ports addObject:p.portType];
+        }
+        // Port types read well raw: "Speaker", "Headphones",
+        // "BluetoothA2DPOutput", "AirPlay". No route at all is itself a
+        // diagnosis - an active session should always have one.
+        NSString* route =
+            ports.count ? [ports componentsJoinedByString:@"+"] : @"noroute";
+        std::snprintf(out, (size_t)cap, "%s %s vol%.2f%s", cat,
+                      route.UTF8String, (double)session.outputVolume,
+                      session.otherAudioPlaying ? " other" : "");
+        out[cap - 1] = '\0';
+    }
+#endif
+}
+
 NE_API const char* ne_mood_name(int mood) { return ne::mood_at(mood).name; }
 NE_API double ne_elapsed(const ne_engine* e) {
     return e ? ((const Holder*)e)->engine.elapsed() : 0.0;

@@ -179,6 +179,8 @@ typedef _GetVis = void Function(Pointer<Void>, Pointer<_NeVis>);
 typedef _GetVisC = Void Function(Pointer<Void>, Pointer<_NeVis>);
 typedef _GetStatus = void Function(Pointer<Void>, Pointer<_NeStatus>);
 typedef _GetStatusC = Void Function(Pointer<Void>, Pointer<_NeStatus>);
+typedef _SessionInfo = void Function(Pointer<Uint8>, int);
+typedef _SessionInfoC = Void Function(Pointer<Uint8>, Int32);
 typedef _MoodName = Pointer<Utf8> Function(int);
 typedef _MoodNameC = Pointer<Utf8> Function(Int32);
 typedef _Elapsed = double Function(Pointer<Void>);
@@ -255,6 +257,8 @@ class DroneEngine {
   // Reused so that polling the visuals sixty times a second allocates nothing.
   final Pointer<_NeVis> _visBuf = calloc<_NeVis>();
   final Pointer<_NeStatus> _statusBuf = calloc<_NeStatus>();
+  static const int _sessionCap = 160;
+  final Pointer<Uint8> _sessionBuf = calloc<Uint8>(_sessionCap);
 
   bool _disposed = false;
 
@@ -340,6 +344,22 @@ class DroneEngine {
   String moodName(int index) =>
       _moodNameFn(index.clamp(0, neMoodCount - 1)).toDartString();
 
+  /// What the OS audio session says about itself: category, output route,
+  /// media volume. Empty everywhere but iOS, and empty against an engine
+  /// binary that predates the symbol - the diagnostics must never be the
+  /// thing that crashes the app they are diagnosing.
+  String sessionInfo() {
+    if (_disposed) return '';
+    final _SessionInfo fn;
+    try {
+      fn = _lib.lookupFunction<_SessionInfoC, _SessionInfo>('ne_session_info');
+    } on ArgumentError {
+      return '';
+    }
+    fn(_sessionBuf, _sessionCap);
+    return _sessionBuf.cast<Utf8>().toDartString();
+  }
+
   void dispose() {
     if (_disposed) return;
     _disposed = true;
@@ -348,5 +368,6 @@ class DroneEngine {
     _handle = nullptr;
     calloc.free(_visBuf);
     calloc.free(_statusBuf);
+    calloc.free(_sessionBuf);
   }
 }

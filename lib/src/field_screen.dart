@@ -45,6 +45,12 @@ class _FieldScreenState extends State<FieldScreen>
   double _statusClock = 0;
   bool _forceDiagnostics = false;
 
+  // Callback throughput between status polls. `callbacks` alone cannot tell a
+  // live device from one that served four thousand buffers and then silently
+  // died with its state still saying "started" - the *rate* can.
+  int _lastCallbacks = -1;
+  double _cbPerSec = 0;
+
   /// Pixels the finger has covered since the last frame, which is where the
   /// excitation the engine hears comes from. Accumulated here rather than
   /// measured per pointer event because pointer events arrive in bursts and
@@ -97,8 +103,13 @@ class _FieldScreenState extends State<FieldScreen>
 
     _statusClock += dt;
     if (_statusClock > 0.5) {
+      final s = c.status();
+      if (_lastCallbacks >= 0 && s.callbacks >= _lastCallbacks) {
+        _cbPerSec = (s.callbacks - _lastCallbacks) / _statusClock;
+      }
+      _lastCallbacks = s.callbacks;
       _statusClock = 0;
-      _status = c.status();
+      _status = s;
     }
 
     if (_touching) {
@@ -281,20 +292,34 @@ class _FieldScreenState extends State<FieldScreen>
     );
   }
 
-  /// The line to show under the readout, or null to show nothing.
+  /// The lines to show under the readout, or null to show nothing.
   ///
   /// It appears on its own when the audio is demonstrably not working, and can
-  /// be summoned by long-pressing the frequency. The three states it has to
-  /// tell apart: a device that never opened, a device that opened but is never
-  /// asked for audio, and a synthesizer that is being asked and is returning
-  /// silence.
+  /// be summoned by long-pressing the frequency. The states it has to tell
+  /// apart: a device that never opened, a device that opened but is never
+  /// asked for audio, a synthesizer that is being asked and is returning
+  /// silence, and - the one the first line cannot see - a synthesizer whose
+  /// sound leaves the callback and then goes somewhere nobody is listening.
+  /// Hence the second line: the engine's own play flag, gate and output level
+  /// split "silence is ours" from "silence is downstream", and the session's
+  /// category / route / media volume say where downstream actually points.
   String? _diagnostics(DroneController c) {
-    if (_forceDiagnostics) return _status.line;
-    if (!c.deviceOk) return _status.line;
-    if (c.playing && _status.callbacks == 0) return _status.line;
-    if (c.playing && _status.elapsed > 5 && _state.vis.level < 0.0005) {
-      return _status.line;
-    }
-    return null;
+    final wanted = _forceDiagnostics ||
+        !c.deviceOk ||
+        (c.playing && _status.callbacks == 0) ||
+        (c.playing && _status.elapsed > 5 && _state.vis.level < 0.0005);
+    if (!wanted) return null;
+
+    final v = _state.vis;
+    final ms = c.mediaSessionOk;
+    final second = <String>[
+      'play${c.enginePlaying ? 1 : 0}',
+      'gate${v.gate.toStringAsFixed(2)}',
+      'lvl${v.level.toStringAsFixed(3)}',
+      'cb/s${_cbPerSec.round()}',
+      if (ms != null) 'ms${ms ? 1 : 0}',
+    ].join(' ');
+    final session = c.sessionInfo();
+    return '${_status.line}\n$second${session.isEmpty ? '' : '\n$session'}';
   }
 }

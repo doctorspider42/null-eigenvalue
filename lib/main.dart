@@ -64,9 +64,13 @@ Future<void> main() async {
       // session that never finishes initialising must cost us the lock
       // screen, not the sound.
     ).timeout(const Duration(seconds: 8));
+    controller.mediaSessionOk = true;
   } catch (_) {
     // No media session is a degraded app, not a dead one: it still makes
-    // sound, it just cannot be driven from a lock screen.
+    // sound, it just cannot be driven from a lock screen. Recorded rather
+    // than merely swallowed: "ms0" in the diagnostics line is the difference
+    // between chasing an iOS eligibility rule and chasing this timeout.
+    controller.mediaSessionOk = false;
   }
 
   // Last, deliberately. AudioService touches the audio session on the way up,

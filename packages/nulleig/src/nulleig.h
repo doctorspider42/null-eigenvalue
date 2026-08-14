@@ -136,6 +136,21 @@ typedef struct ne_status {
 
 NE_API void ne_get_status(ne_engine* e, ne_status* out);
 
+/* The audio session's side of the story, as one short line.
+ *
+ * ne_status can prove the synthesizer is producing samples and the OS is
+ * collecting them, and still not explain silence - because after the callback
+ * the audio belongs to the session, and the session has opinions ne_status
+ * cannot see: what category actually stuck, which physical output the route
+ * points at (a Bluetooth speaker in a drawer looks exactly like a broken
+ * app), what the *media* volume is (the ringer volume is a different slider),
+ * and whether another app is playing over us.
+ *
+ * On iOS, writes something like "playback Speaker vol1.00" into `out`;
+ * appends " other" when another app's audio is active. On every other
+ * platform writes an empty string. Always NUL-terminates when cap > 0. */
+NE_API void ne_session_info(char* out, int cap);
+
 /* ------------------------------------------------------------- introspection */
 
 NE_API void ne_get_vis(ne_engine* e, ne_vis* out);

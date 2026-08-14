@@ -26,11 +26,12 @@ import UIKit
   private func configureAudioSession() {
     let session = AVAudioSession.sharedInstance()
     do {
-      try session.setCategory(
-        .playback,
-        mode: .default,
-        options: [.allowBluetoothA2DP, .allowAirPlay]
-      )
+      // No options: with .playback, Bluetooth A2DP and AirPlay routes are
+      // already allowed by default, and Apple documents the explicit flags as
+      // valid only with .playAndRecord - passing them here risks the whole
+      // setCategory call being refused, which would leave the session in the
+      // default soloAmbient and this app silent behind the ringer switch.
+      try session.setCategory(.playback, mode: .default, options: [])
       try session.setActive(true, options: [])
     } catch {
       // A session that will not configure means no sound, but the UI still
