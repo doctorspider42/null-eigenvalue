@@ -17,6 +17,7 @@ class Hud extends StatelessWidget {
     required this.rootHz,
     required this.onMood,
     required this.onToggle,
+    this.sleepLabel,
     this.diagnostics,
     this.onDiagnosticsTap,
   });
@@ -27,6 +28,11 @@ class Hud extends StatelessWidget {
   final double rootHz;
   final ValueChanged<int> onMood;
   final VoidCallback onToggle;
+
+  /// "SLEEP 27:41" while a sleep timer runs, or null. Same register as the
+  /// frequency readout: information for whoever looks, decoration for
+  /// everyone else.
+  final String? sleepLabel;
 
   /// Shown under the readout when something is wrong with the audio device,
   /// or when the reading is asked for by long-pressing the frequency. There is
@@ -90,6 +96,19 @@ class Hud extends StatelessWidget {
             ),
           ),
         ),
+        if (sleepLabel != null) ...<Widget>[
+          const SizedBox(height: 6),
+          Text(
+            sleepLabel!,
+            style: TextStyle(
+              fontSize: 10,
+              height: 1.2,
+              letterSpacing: 2.4,
+              fontWeight: FontWeight.w300,
+              color: palette.accent.withValues(alpha: 0.55),
+            ),
+          ),
+        ],
         if (diagnostics != null) ...<Widget>[
           const SizedBox(height: 8),
           Padding(
@@ -109,6 +128,71 @@ class Hud extends StatelessWidget {
       ],
     );
   }
+}
+
+/// The corner gear that opens the sleep panel. Drawn, like the transport,
+/// because a Material icon in this picture looks like a sticker: one thin
+/// outline of eight teeth and a hub, at the same stroke weight as everything
+/// else. A 20-pixel glyph inside a 44-pixel target, same deal as the dots.
+class GearButton extends StatelessWidget {
+  const GearButton({super.key, required this.colour, required this.onTap});
+
+  final Color colour;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: SizedBox(
+        width: 44,
+        height: 44,
+        child: CustomPaint(painter: _GearPainter(colour)),
+      ),
+    );
+  }
+}
+
+class _GearPainter extends CustomPainter {
+  _GearPainter(this.colour);
+
+  final Color colour;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final c = Offset(size.width / 2, size.height / 2);
+    final paint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.1
+      ..color = colour.withValues(alpha: 0.5);
+
+    const n = 8;
+    const seg = 2 * math.pi / n;
+    const tw = seg * 0.44; // angular width of one tooth
+    final r = size.shortestSide * 0.155; // body
+    final tr = r * 1.42; // tooth tip
+    final outer = Rect.fromCircle(center: c, radius: tr);
+    final inner = Rect.fromCircle(center: c, radius: r);
+
+    final path = Path()
+      ..moveTo(c.dx + tr * math.cos(-tw / 2), c.dy + tr * math.sin(-tw / 2));
+    for (var i = 0; i < n; i++) {
+      final a = i * seg - tw / 2;
+      path
+        ..arcTo(outer, a, tw, false)
+        ..lineTo(c.dx + r * math.cos(a + tw), c.dy + r * math.sin(a + tw))
+        ..arcTo(inner, a + tw, seg - tw, false)
+        ..lineTo(
+            c.dx + tr * math.cos(a + seg), c.dy + tr * math.sin(a + seg));
+    }
+    path.close();
+    canvas.drawPath(path, paint);
+    canvas.drawCircle(c, r * 0.42, paint);
+  }
+
+  @override
+  bool shouldRepaint(covariant _GearPainter old) => old.colour != colour;
 }
 
 class _MoodDot extends StatelessWidget {

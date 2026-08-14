@@ -112,6 +112,25 @@ class Engine {
     void set_playing(bool p) { p_playing_.store(p ? 1 : 0, std::memory_order_relaxed); }
     bool playing() const { return p_playing_.load(std::memory_order_relaxed) != 0; }
     void set_gain(float g) { p_gain_.store(clampf(g, 0.0f, 1.5f), std::memory_order_relaxed); }
+    // Deadline in device frames, because frames_done_ is the one clock that
+    // advances exactly when audio can be heard - it counts through a pause
+    // (the device keeps running) and stops if the device dies, in which case
+    // there is nothing left to switch off anyway. 0 means disarmed.
+    void set_sleep(double seconds) {
+        if (seconds <= 0.0) {
+            sleep_deadline_.store(0, std::memory_order_relaxed);
+            return;
+        }
+        uint64_t now = frames_done_.load(std::memory_order_relaxed);
+        sleep_deadline_.store(now + (uint64_t)(seconds * (double)sr_) + 1,
+                              std::memory_order_relaxed);
+    }
+    double sleep_remaining() const {
+        uint64_t dl = sleep_deadline_.load(std::memory_order_relaxed);
+        if (dl == 0) return -1.0;
+        uint64_t now = frames_done_.load(std::memory_order_relaxed);
+        return now >= dl ? 0.0 : (double)(dl - now) / (double)sr_;
+    }
     void set_seed(uint32_t s) {
         p_seed_.store(s, std::memory_order_relaxed);
         p_reseed_.fetch_add(1, std::memory_order_relaxed);
@@ -147,6 +166,7 @@ class Engine {
     std::atomic<uint32_t> p_seed_{0x4e756c6cu};
     std::atomic<uint32_t> p_reseed_{0};
     uint32_t reseed_seen_ = 0;
+    std::atomic<uint64_t> sleep_deadline_{0};
 
     // -------------------------------------------------------------- outgoing
     std::atomic<float> v_level_{0.0f};

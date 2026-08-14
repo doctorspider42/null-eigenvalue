@@ -234,6 +234,12 @@ NE_API void ne_set_gain(ne_engine* e, float gain) {
 NE_API void ne_set_seed(ne_engine* e, uint32_t seed) {
     if (e) ((Holder*)e)->engine.set_seed(seed);
 }
+NE_API void ne_set_sleep(ne_engine* e, double seconds) {
+    if (e) ((Holder*)e)->engine.set_sleep(seconds);
+}
+NE_API double ne_sleep_remaining(const ne_engine* e) {
+    return e ? ((const Holder*)e)->engine.sleep_remaining() : -1.0;
+}
 NE_API void ne_get_vis(ne_engine* e, ne_vis* out) {
     if (e && out) ((Holder*)e)->engine.get_vis(out);
 }

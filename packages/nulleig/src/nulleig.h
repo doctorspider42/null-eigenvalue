@@ -105,6 +105,18 @@ NE_API int  ne_playing(const ne_engine* e);
 /* 0..1 linear, applied last. */
 NE_API void ne_set_gain(ne_engine* e, float gain);
 
+/* Sleep timer. Arms a point `seconds` of device time from now; the last
+ * twenty seconds before it are a fade rather than a countdown to a cut, and
+ * when it lands the engine clears its own playing flag. The deadline lives
+ * here and not in Dart because it has to fire behind a locked screen, where
+ * the UI may be suspended - the audio thread is the only clock this app can
+ * trust to still be running. `seconds` <= 0 disarms. Counts down through a
+ * manual pause (like a radio's sleep switch), so re-arming is never needed. */
+NE_API void ne_set_sleep(ne_engine* e, double seconds);
+
+/* Seconds until the armed sleep fires; negative when disarmed. */
+NE_API double ne_sleep_remaining(const ne_engine* e);
+
 /* Re-seeds every random stream. Same seed + same parameters = same piece,
  * which is what makes the thing testable at all. */
 NE_API void ne_set_seed(ne_engine* e, uint32_t seed);

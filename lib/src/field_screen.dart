@@ -51,6 +51,12 @@ class _FieldScreenState extends State<FieldScreen>
   int _lastCallbacks = -1;
   double _cbPerSec = 0;
 
+  // The sleep panel, and the last countdown second the HUD was rebuilt for.
+  // The countdown lives in the engine; the UI only needs a repaint when the
+  // displayed second changes, and only while something is showing it.
+  bool _sleepVisible = false;
+  int _sleepSecShown = -1;
+
   /// Pixels the finger has covered since the last frame, which is where the
   /// excitation the engine hears comes from. Accumulated here rather than
   /// measured per pointer event because pointer events arrive in bursts and
@@ -92,7 +98,15 @@ class _FieldScreenState extends State<FieldScreen>
 
     final c = widget.controller;
     c.tickBlend(dt);
+    c.syncFromEngine();
     _state.palette = c.palette;
+
+    // Redraw the countdown once a second, and only when someone can see it.
+    final sleepSec = c.sleepRemaining?.inSeconds ?? -1;
+    if (sleepSec != _sleepSecShown && (_hudVisible || _sleepVisible)) {
+      _sleepSecShown = sleepSec;
+      setState(() {});
+    }
 
     final wantIdle = c.playing ? 0.0 : 1.0;
     _idle += (wantIdle - _idle) * (1 - math.exp(-dt / 0.45));
@@ -253,6 +267,28 @@ class _FieldScreenState extends State<FieldScreen>
             ),
           ),
 
+          // The gear. Rides in and out with the HUD, so the resting picture
+          // stays chromeless; opens the one setting the app has.
+          Positioned(
+            top: media.padding.top + 8,
+            right: 10,
+            child: AnimatedOpacity(
+              opacity: _hudVisible ? 1 : 0,
+              duration: const Duration(milliseconds: 550),
+              curve: Curves.easeOut,
+              child: IgnorePointer(
+                ignoring: !_hudVisible,
+                child: GearButton(
+                  colour: palette.accent,
+                  onTap: () {
+                    setState(() => _sleepVisible = true);
+                    _hudTimer?.cancel();
+                  },
+                ),
+              ),
+            ),
+          ),
+
           Align(
             alignment: Alignment.bottomCenter,
             child: Padding(
@@ -268,6 +304,7 @@ class _FieldScreenState extends State<FieldScreen>
                     mood: c.mood,
                     playing: c.playing,
                     rootHz: _state.vis.rootHz,
+                    sleepLabel: _sleepLabel(c),
                     diagnostics: _diagnostics(c),
                     onDiagnosticsTap: () {
                       setState(() => _forceDiagnostics = !_forceDiagnostics);
@@ -287,9 +324,59 @@ class _FieldScreenState extends State<FieldScreen>
             ),
           ),
 
+          // Sleep panel. A scrim and five words; tapping anywhere else is
+          // "close". It deliberately does not pause, restyle or otherwise
+          // comment on the music - it is a bedside switch, not a screen.
+          Positioned.fill(
+            child: IgnorePointer(
+              ignoring: !_sleepVisible,
+              child: AnimatedOpacity(
+                opacity: _sleepVisible ? 1 : 0,
+                duration: const Duration(milliseconds: 320),
+                curve: Curves.easeOut,
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: _closeSleep,
+                  child: Container(
+                    color: Colors.black.withValues(alpha: 0.55),
+                    child: Center(
+                      child: _SleepPanel(
+                        accent: palette.accent,
+                        remaining: c.sleepRemaining,
+                        choice: c.sleepChoice,
+                        onPick: _pickSleep,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
         ],
       ),
     );
+  }
+
+  void _closeSleep() {
+    setState(() => _sleepVisible = false);
+    _restartHudTimer();
+  }
+
+  void _pickSleep(Duration? d) {
+    widget.controller.setSleep(d);
+    _closeSleep();
+  }
+
+  /// "SLEEP 27:41" under the frequency while a timer runs, or null.
+  String? _sleepLabel(DroneController c) {
+    final rem = c.sleepRemaining;
+    if (rem == null) return null;
+    final h = rem.inHours;
+    final m = rem.inMinutes % 60;
+    final s = rem.inSeconds % 60;
+    final mm = m.toString().padLeft(2, '0');
+    final ss = s.toString().padLeft(2, '0');
+    return h > 0 ? 'SLEEP $h:$mm:$ss' : 'SLEEP $m:$ss';
   }
 
   /// The lines to show under the readout, or null to show nothing.
@@ -321,5 +408,74 @@ class _FieldScreenState extends State<FieldScreen>
     ].join(' ');
     final session = c.sessionInfo();
     return '${_status.line}\n$second${session.isEmpty ? '' : '\n$session'}';
+  }
+}
+
+/// The sleep timer's face: a title, five durations and OFF, in the same
+/// typography as the mood name. The active choice is the accent colour;
+/// everything else keeps the HUD's whisper-grey, so even fully open this is
+/// barely a dialog.
+class _SleepPanel extends StatelessWidget {
+  const _SleepPanel({
+    required this.accent,
+    required this.remaining,
+    required this.choice,
+    required this.onPick,
+  });
+
+  final Color accent;
+  final Duration? remaining;
+  final Duration? choice;
+  final ValueChanged<Duration?> onPick;
+
+  static const List<int> _minutes = <int>[15, 30, 45, 60, 90];
+
+  @override
+  Widget build(BuildContext context) {
+    final armed = remaining != null;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        Text(
+          'SLEEP',
+          style: TextStyle(
+            fontSize: 12,
+            letterSpacing: 6.5,
+            fontWeight: FontWeight.w300,
+            color: Colors.white.withValues(alpha: 0.45),
+          ),
+        ),
+        const SizedBox(height: 26),
+        _row('OFF', selected: !armed, onTap: () => onPick(null)),
+        for (final m in _minutes)
+          _row(
+            '$m MIN',
+            selected: armed && choice?.inMinutes == m,
+            onTap: () => onPick(Duration(minutes: m)),
+          ),
+      ],
+    );
+  }
+
+  Widget _row(String label, {required bool selected, required VoidCallback onTap}) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 48, vertical: 11),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 12,
+            height: 1.0,
+            letterSpacing: 4.6,
+            fontWeight: FontWeight.w400,
+            color: selected
+                ? accent.withValues(alpha: 0.92)
+                : Colors.white.withValues(alpha: 0.32),
+          ),
+        ),
+      ),
+    );
   }
 }

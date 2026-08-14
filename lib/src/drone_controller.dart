@@ -145,6 +145,56 @@ class DroneController extends ChangeNotifier {
 
   void toggle() => setPlaying(!_playing);
 
+  // ----------------------------------------------------------------- sleep
+
+  Timer? _sleepFallback;
+
+  /// The option the user picked, for highlighting it in the panel. The truth
+  /// about the countdown itself is the engine's; this is only which label to
+  /// draw a ring around.
+  Duration? sleepChoice;
+
+  /// Seconds until the armed sleep fires, straight from the engine. Null when
+  /// disarmed - which includes "it already fired", so the UI can simply stop
+  /// showing a countdown that no longer exists.
+  Duration? get sleepRemaining {
+    final s = engine.sleepRemaining;
+    return s == null ? null : Duration(milliseconds: (s * 1000).round());
+  }
+
+  /// Arms the sleep timer, or disarms it with null.
+  ///
+  /// The engine owns the deadline (it must fire behind a locked screen, where
+  /// this isolate may be frozen). The Dart timer here is only an echo: when
+  /// the UI *is* alive at the deadline it flips [playing] so the transport
+  /// and the lock-screen controls agree with the silence; when it is not,
+  /// [syncFromEngine] catches up on the next frame instead.
+  void setSleep(Duration? d) {
+    engine.setSleep(d);
+    sleepChoice = d;
+    _sleepFallback?.cancel();
+    _sleepFallback = d == null
+        ? null
+        : Timer(d + const Duration(seconds: 1), () => setPlaying(false));
+    notifyListeners();
+  }
+
+  /// Called from the frame clock. The engine can stop itself (sleep landing
+  /// with the app foregrounded but the fallback timer throttled, or the UI
+  /// waking after a night of background audio); the transport should follow
+  /// rather than claim to be playing silence.
+  void syncFromEngine() {
+    if (_playing && !engine.playing) {
+      _playing = false;
+      if (sleepChoice != null && engine.sleepRemaining == null) {
+        sleepChoice = null;
+        _sleepFallback?.cancel();
+        _sleepFallback = null;
+      }
+      notifyListeners();
+    }
+  }
+
   DroneVis vis() => engine.vis();
 
   // ---------------------------------------------------------------- artwork
@@ -208,6 +258,7 @@ class DroneController extends ChangeNotifier {
 
   @override
   void dispose() {
+    _sleepFallback?.cancel();
     engine.dispose();
     super.dispose();
   }

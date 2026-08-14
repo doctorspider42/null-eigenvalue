@@ -175,6 +175,8 @@ typedef _SetTouch = void Function(Pointer<Void>, int, double);
 typedef _SetTouchC = Void Function(Pointer<Void>, Int32, Float);
 typedef _SetSeed = void Function(Pointer<Void>, int);
 typedef _SetSeedC = Void Function(Pointer<Void>, Uint32);
+typedef _SetDouble = void Function(Pointer<Void>, double);
+typedef _SetDoubleC = Void Function(Pointer<Void>, Double);
 typedef _GetVis = void Function(Pointer<Void>, Pointer<_NeVis>);
 typedef _GetVisC = Void Function(Pointer<Void>, Pointer<_NeVis>);
 typedef _GetStatus = void Function(Pointer<Void>, Pointer<_NeStatus>);
@@ -245,6 +247,10 @@ class DroneEngine {
       _lib.lookupFunction<_SetFloatC, _SetFloat>('ne_set_gain');
   late final _setSeed =
       _lib.lookupFunction<_SetSeedC, _SetSeed>('ne_set_seed');
+  late final _setSleepFn =
+      _lib.lookupFunction<_SetDoubleC, _SetDouble>('ne_set_sleep');
+  late final _sleepRemainingFn =
+      _lib.lookupFunction<_ElapsedC, _Elapsed>('ne_sleep_remaining');
   late final _getVisFn =
       _lib.lookupFunction<_GetVisC, _GetVis>('ne_get_vis');
   late final _getStatusFn =
@@ -306,6 +312,21 @@ class DroneEngine {
   }
 
   double get elapsedSeconds => _disposed ? 0 : _elapsedFn(_handle);
+
+  /// Arms the sleep timer for [d] from now, or disarms it when [d] is null.
+  /// The countdown itself lives on the audio thread - see ne_set_sleep - so
+  /// it survives a locked screen and a suspended UI.
+  void setSleep(Duration? d) {
+    if (_disposed) return;
+    _setSleepFn(_handle, d == null ? 0 : d.inMilliseconds / 1000.0);
+  }
+
+  /// Seconds until sleep fires, or null when no timer is armed.
+  double? get sleepRemaining {
+    if (_disposed) return null;
+    final s = _sleepRemainingFn(_handle);
+    return s < 0 ? null : s;
+  }
 
   /// Reads the current state. Cheap enough to call every frame.
   DroneVis vis() {

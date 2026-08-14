@@ -416,8 +416,29 @@ void Engine::control_block() {
     gain_ = s_gain_.z;
     width_ = 1.0f + 0.4f * b;
 
+    // ---- sleep ------------------------------------------------------------
+    // The last twenty seconds are a fade, not a countdown to a cut: scaling
+    // the gate's target by the remaining time turns the deadline into a long
+    // exhale, which on this instrument is the only way to stop that does not
+    // sound like a fault. When the deadline lands the engine clears its own
+    // playing flag - the UI finds out later, whenever it next looks, and a UI
+    // that is asleep behind a locked screen never needs to find out at all.
+    float sleep_scale = 1.0f;
+    uint64_t sleep_dl = sleep_deadline_.load(std::memory_order_relaxed);
+    if (sleep_dl != 0) {
+        uint64_t done = frames_done_.load(std::memory_order_relaxed);
+        if (done >= sleep_dl) {
+            sleep_deadline_.store(0, std::memory_order_relaxed);
+            p_playing_.store(0, std::memory_order_relaxed);
+            play = false;
+        } else {
+            float rem = (float)((double)(sleep_dl - done) / (double)sr_);
+            sleep_scale = clampf(rem / 20.0f, 0.0f, 1.0f);
+        }
+    }
+
     // ---- master gate ------------------------------------------------------
-    float gate_target = play ? 1.0f : 0.0f;
+    float gate_target = (play ? 1.0f : 0.0f) * sleep_scale;
     float gate_coef = 1.0f - std::exp(-dt / (play ? 1.6f : 1.1f));
     gate_ += gate_coef * (gate_target - gate_);
     if (!play && gate_ < 1e-4f) gate_ = 0.0f;
