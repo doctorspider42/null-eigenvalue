@@ -25,6 +25,15 @@ class DroneController extends ChangeNotifier {
   bool _playing = false;
   bool _deviceOk = false;
 
+  /// Master gain, 0..1.
+  ///
+  /// Not quite 1 by default: the synthesizer is mastered to leave a little
+  /// headroom, and starting at unity would mean the only direction the control
+  /// goes is down. This is the app's own level, underneath whatever the system
+  /// mixer says - which is the point of having it on a desktop, where the drone
+  /// is one voice among a dozen other things making noise.
+  double _volume = 0.92;
+
   // Where the mood transition is up to, for the palette crossfade. The engine
   // does its own, much slower migration in the audio; this is only the colour.
   int _prevMood = 1;
@@ -47,6 +56,7 @@ class DroneController extends ChangeNotifier {
   double get fieldY => _y;
   bool get playing => _playing;
   bool get deviceOk => _deviceOk;
+  double get volume => _volume;
 
   MoodPalette get palette => MoodPalette.lerp(
         MoodPalette.all[_prevMood],
@@ -70,13 +80,17 @@ class DroneController extends ChangeNotifier {
       _prevMood = _mood;
       _x = (_prefs?.getDouble('x') ?? 0.5).clamp(0.0, 1.0);
       _y = (_prefs?.getDouble('y') ?? 0.45).clamp(0.0, 1.0);
+      // Floored well above zero. A drone that comes back silent because the
+      // level was left at nothing last week is indistinguishable from one that
+      // is broken, and this app has no other evidence to offer.
+      _volume = (_prefs?.getDouble('volume') ?? 0.92).clamp(0.05, 1.0);
     } catch (_) {
       // A phone that will not give us preferences is not a reason to refuse to
       // make a sound.
     }
     engine.mood = _mood;
     engine.setField(_x, _y);
-    engine.gain = 0.92;
+    engine.gain = _volume;
     notifyListeners();
   }
 
@@ -105,7 +119,21 @@ class DroneController extends ChangeNotifier {
     _prefs?.setInt('mood', _mood);
     _prefs?.setDouble('x', _x);
     _prefs?.setDouble('y', _y);
+    _prefs?.setDouble('volume', _volume);
   }
+
+  /// Sets the master gain. The engine ramps to it internally, so this is safe
+  /// to call from a scroll wheel at whatever rate the mouse produces.
+  void setVolume(double value) {
+    final v = value.clamp(0.05, 1.0);
+    if (v == _volume) return;
+    _volume = v;
+    engine.gain = v;
+    _save();
+    notifyListeners();
+  }
+
+  void nudgeVolume(double delta) => setVolume(_volume + delta);
 
   void setField(double x, double y, {bool touching = true, double speed = 0}) {
     _x = x.clamp(0.0, 1.0);

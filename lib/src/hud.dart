@@ -1,4 +1,4 @@
-import 'dart:math' as math;
+﻿import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:nulleig/nulleig.dart';
@@ -17,7 +17,11 @@ class Hud extends StatelessWidget {
     required this.rootHz,
     required this.onMood,
     required this.onToggle,
+    this.scale = 1,
     this.sleepLabel,
+    this.updateLabel,
+    this.onUpdateTap,
+    this.volumeLabel,
     this.diagnostics,
     this.onDiagnosticsTap,
   });
@@ -29,10 +33,31 @@ class Hud extends StatelessWidget {
   final ValueChanged<int> onMood;
   final VoidCallback onToggle;
 
+  /// How much bigger than the phone this is being drawn. One number for the
+  /// whole HUD: the proportions are the design, and a window is a bigger sheet
+  /// of the same paper rather than an excuse to lay it out again. 1 on a
+  /// phone, and never much past one and a half anywhere - past that the
+  /// chrome starts competing with the picture it is sitting on.
+  final double scale;
+
   /// "SLEEP 27:41" while a sleep timer runs, or null. Same register as the
   /// frequency readout: information for whoever looks, decoration for
   /// everyone else.
   final String? sleepLabel;
+
+  /// "UPDATE 0.1.42" when the desktop build has found a newer release, and
+  /// the download's progress after it has been asked for. Null everywhere
+  /// else, which includes every phone and every build that CI did not cut.
+  final String? updateLabel;
+  final VoidCallback? onUpdateTap;
+
+  /// "VOLUME 72%", for the couple of seconds after the level changes.
+  ///
+  /// Transient rather than permanent. The level is worth seeing while you are
+  /// moving it and is clutter the rest of the time - and unlike the sleep
+  /// countdown there is always a value, so a line that was always there would
+  /// never be off.
+  final String? volumeLabel;
 
   /// Shown under the readout when something is wrong with the audio device,
   /// or when the reading is asked for by long-pressing the frequency. There is
@@ -45,8 +70,13 @@ class Hud extends StatelessWidget {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: <Widget>[
-        _Transport(playing: playing, colour: palette.accent, onTap: onToggle),
-        const SizedBox(height: 26),
+        _Transport(
+          playing: playing,
+          colour: palette.accent,
+          scale: scale,
+          onTap: onToggle,
+        ),
+        SizedBox(height: 26 * scale),
         // Dots, not names. Six names at a readable size do not fit across a
         // phone, and the obvious fixes - a scroller, or two rows - both turn
         // the one piece of chrome in the app into a menu. A row of dots with
@@ -59,66 +89,113 @@ class Hud extends StatelessWidget {
               _MoodDot(
                 selected: i == mood,
                 colour: palette.accent,
+                scale: scale,
                 onTap: () => onMood(i),
               ),
           ],
         ),
-        const SizedBox(height: 14),
+        SizedBox(height: 14 * scale),
         AnimatedSwitcher(
           duration: const Duration(milliseconds: 380),
           child: Text(
             MoodPalette.all[mood].name.toUpperCase(),
             key: ValueKey<int>(mood),
             style: TextStyle(
-              fontSize: 12,
+              fontSize: 12 * scale,
               height: 1.0,
-              letterSpacing: 4.6,
+              letterSpacing: 4.6 * scale,
               fontWeight: FontWeight.w400,
               color: palette.accent.withValues(alpha: 0.92),
             ),
           ),
         ),
-        const SizedBox(height: 12),
+        SizedBox(height: 12 * scale),
         GestureDetector(
           behavior: HitTestBehavior.opaque,
           onLongPress: onDiagnosticsTap,
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 4),
+            padding: EdgeInsets.symmetric(
+              horizontal: 24 * scale,
+              vertical: 4 * scale,
+            ),
             child: Text(
               '${rootHz.toStringAsFixed(1)} Hz',
               style: TextStyle(
-                fontSize: 10,
+                fontSize: 10 * scale,
                 height: 1.2,
-                letterSpacing: 2.4,
+                letterSpacing: 2.4 * scale,
                 fontWeight: FontWeight.w300,
                 color: Colors.white.withValues(alpha: 0.26),
               ),
             ),
           ),
         ),
-        if (sleepLabel != null) ...<Widget>[
-          const SizedBox(height: 6),
+        // Above the sleep countdown, because it is the line that is currently
+        // moving and the one the reader just asked for.
+        if (volumeLabel != null) ...<Widget>[
+          SizedBox(height: 6 * scale),
           Text(
-            sleepLabel!,
+            volumeLabel!,
             style: TextStyle(
-              fontSize: 10,
+              fontSize: 10 * scale,
               height: 1.2,
-              letterSpacing: 2.4,
+              letterSpacing: 2.4 * scale,
               fontWeight: FontWeight.w300,
               color: palette.accent.withValues(alpha: 0.55),
             ),
           ),
         ],
+        if (sleepLabel != null) ...<Widget>[
+          SizedBox(height: 6 * scale),
+          Text(
+            sleepLabel!,
+            style: TextStyle(
+              fontSize: 10 * scale,
+              height: 1.2,
+              letterSpacing: 2.4 * scale,
+              fontWeight: FontWeight.w300,
+              color: palette.accent.withValues(alpha: 0.55),
+            ),
+          ),
+        ],
+        // The update sits under the sleep countdown and above the
+        // diagnostics, which is the right order of urgency: how long the music
+        // has left, then that there is a newer one of these, then why it is
+        // broken. Dimmer than the mood name and no louder than the frequency -
+        // it is an offer, and an offer that shouts is a nag.
+        if (updateLabel != null) ...<Widget>[
+          SizedBox(height: 6 * scale),
+          GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: onUpdateTap,
+            child: Padding(
+              padding: EdgeInsets.symmetric(
+                horizontal: 24 * scale,
+                vertical: 4 * scale,
+              ),
+              child: Text(
+                updateLabel!,
+                style: TextStyle(
+                  fontSize: 10 * scale,
+                  height: 1.2,
+                  letterSpacing: 2.4 * scale,
+                  fontWeight: FontWeight.w300,
+                  color: palette.accent.withValues(alpha: 0.62),
+                ),
+              ),
+            ),
+          ),
+        ],
         if (diagnostics != null) ...<Widget>[
-          const SizedBox(height: 8),
+          SizedBox(height: 8 * scale),
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 18),
+            padding: EdgeInsets.symmetric(horizontal: 18 * scale),
             child: Text(
               diagnostics!,
               textAlign: TextAlign.center,
               style: TextStyle(
                 fontFamily: 'monospace',
-                fontSize: 9,
+                fontSize: 9 * scale,
                 height: 1.35,
                 color: Colors.white.withValues(alpha: 0.42),
               ),
@@ -135,10 +212,16 @@ class Hud extends StatelessWidget {
 /// outline of eight teeth and a hub, at the same stroke weight as everything
 /// else. A 20-pixel glyph inside a 44-pixel target, same deal as the dots.
 class GearButton extends StatelessWidget {
-  const GearButton({super.key, required this.colour, required this.onTap});
+  const GearButton({
+    super.key,
+    required this.colour,
+    required this.onTap,
+    this.scale = 1,
+  });
 
   final Color colour;
   final VoidCallback onTap;
+  final double scale;
 
   @override
   Widget build(BuildContext context) {
@@ -146,8 +229,8 @@ class GearButton extends StatelessWidget {
       behavior: HitTestBehavior.opaque,
       onTap: onTap,
       child: SizedBox(
-        width: 44,
-        height: 44,
+        width: 44 * scale,
+        height: 44 * scale,
         child: CustomPaint(painter: _GearPainter(colour)),
       ),
     );
@@ -200,11 +283,13 @@ class _MoodDot extends StatelessWidget {
     required this.selected,
     required this.colour,
     required this.onTap,
+    this.scale = 1,
   });
 
   final bool selected;
   final Color colour;
   final VoidCallback onTap;
+  final double scale;
 
   @override
   Widget build(BuildContext context) {
@@ -214,14 +299,14 @@ class _MoodDot extends StatelessWidget {
       // A 5-pixel dot inside a 44-pixel target: the thing you aim at is the
       // size a thumb needs, the thing you see is the size the picture needs.
       child: SizedBox(
-        width: 44,
-        height: 34,
+        width: 44 * scale,
+        height: 34 * scale,
         child: Center(
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 320),
             curve: Curves.easeOut,
-            width: selected ? 7 : 4,
-            height: selected ? 7 : 4,
+            width: (selected ? 7 : 4) * scale,
+            height: (selected ? 7 : 4) * scale,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
               color: selected ? colour : Colors.white.withValues(alpha: 0.26),
@@ -238,11 +323,13 @@ class _Transport extends StatelessWidget {
     required this.playing,
     required this.colour,
     required this.onTap,
+    this.scale = 1,
   });
 
   final bool playing;
   final Color colour;
   final VoidCallback onTap;
+  final double scale;
 
   @override
   Widget build(BuildContext context) {
@@ -250,8 +337,8 @@ class _Transport extends StatelessWidget {
       behavior: HitTestBehavior.opaque,
       onTap: onTap,
       child: SizedBox(
-        width: 92,
-        height: 92,
+        width: 92 * scale,
+        height: 92 * scale,
         child: TweenAnimationBuilder<double>(
           tween: Tween<double>(begin: 0, end: playing ? 1 : 0),
           duration: const Duration(milliseconds: 420),
@@ -332,4 +419,272 @@ class _TransportPainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant _TransportPainter old) =>
       old.t != t || old.colour != colour;
+}
+
+/// The sleep timer's face: a title, five durations and OFF, in the same
+/// typography as the mood name. The active choice is the accent colour;
+/// everything else keeps the HUD's whisper-grey, so even fully open this is
+/// barely a dialog.
+///
+/// On a desktop it carries the key bindings as well. They belong here rather
+/// than on the picture: this is the only surface in the app that is allowed to
+/// be a list of words, and shortcuts nobody can find are shortcuts nobody has.
+class SleepPanel extends StatelessWidget {
+  const SleepPanel({
+    super.key,
+    required this.accent,
+    required this.remaining,
+    required this.choice,
+    required this.onPick,
+    this.scale = 1,
+    this.showKeys = false,
+    this.volume,
+    this.onVolume,
+  });
+
+  final Color accent;
+  final Duration? remaining;
+  final Duration? choice;
+  final ValueChanged<Duration?> onPick;
+  final double scale;
+  final bool showKeys;
+
+  /// The master level, 0..1, or null to leave the section out entirely - which
+  /// is what a phone does, having a hardware volume control six inches from
+  /// the user's thumb.
+  final double? volume;
+  final ValueChanged<double>? onVolume;
+
+  static const List<int> _minutes = <int>[15, 30, 45, 60, 90];
+
+  static const List<List<String>> _keys = <List<String>>[
+    <String>['SPACE', 'PLAY / PAUSE'],
+    <String>['1 - 6', 'MOOD'],
+    <String>['ARROWS', 'FIELD'],
+    <String>['SCROLL', 'VOLUME'],
+    <String>['- / =', 'VOLUME'],
+    <String>['F', 'FULL SCREEN'],
+    <String>['S', 'THIS PANEL'],
+    <String>['D', 'DIAGNOSTICS'],
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    final armed = remaining != null;
+    // Scrollable, because the window has a floor of 480 logical pixels and
+    // this column - six durations, a level and eight key bindings - is taller
+    // than that. It shrink-wraps in both axes against the loose constraints a
+    // Center hands it, so on any ordinary window there is nothing to scroll
+    // and no sign that there could be.
+    return SingleChildScrollView(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: _children(armed),
+      ),
+    );
+  }
+
+  List<Widget> _children(bool armed) {
+    return <Widget>[
+        Text(
+          'SLEEP',
+          style: TextStyle(
+            fontSize: 12 * scale,
+            letterSpacing: 6.5 * scale,
+            fontWeight: FontWeight.w300,
+            color: Colors.white.withValues(alpha: 0.45),
+          ),
+        ),
+        SizedBox(height: 26 * scale),
+        _row('OFF', selected: !armed, onTap: () => onPick(null)),
+        for (final m in _minutes)
+          _row(
+            '$m MIN',
+            selected: armed && choice?.inMinutes == m,
+            onTap: () => onPick(Duration(minutes: m)),
+          ),
+        if (volume != null) ...<Widget>[
+          SizedBox(height: 24 * scale),
+          Container(
+            width: 200 * scale,
+            height: 1,
+            color: Colors.white.withValues(alpha: 0.08),
+          ),
+          SizedBox(height: 24 * scale),
+          Text(
+            'VOLUME ${(volume! * 100).round()}%',
+            style: TextStyle(
+              fontSize: 11 * scale,
+              height: 1.0,
+              letterSpacing: 4.6 * scale,
+              fontWeight: FontWeight.w300,
+              color: Colors.white.withValues(alpha: 0.45),
+            ),
+          ),
+          SizedBox(height: 16 * scale),
+          _VolumeBar(
+            value: volume!,
+            accent: accent,
+            scale: scale,
+            onChanged: onVolume ?? (_) {},
+          ),
+        ],
+        if (showKeys) ...<Widget>[
+          SizedBox(height: 24 * scale),
+          Container(
+            width: 200 * scale,
+            height: 1,
+            color: Colors.white.withValues(alpha: 0.08),
+          ),
+          SizedBox(height: 22 * scale),
+          for (final k in _keys)
+            Padding(
+              padding: EdgeInsets.symmetric(vertical: 3.5 * scale),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  SizedBox(
+                    width: 92 * scale,
+                    child: Text(
+                      k[0],
+                      textAlign: TextAlign.right,
+                      style: TextStyle(
+                        fontSize: 10 * scale,
+                        height: 1.0,
+                        letterSpacing: 2.4 * scale,
+                        fontWeight: FontWeight.w400,
+                        color: Colors.white.withValues(alpha: 0.34),
+                      ),
+                    ),
+                  ),
+                  SizedBox(width: 26 * scale),
+                  SizedBox(
+                    width: 132 * scale,
+                    child: Text(
+                      k[1],
+                      style: TextStyle(
+                        fontSize: 10 * scale,
+                        height: 1.0,
+                        letterSpacing: 2.4 * scale,
+                        fontWeight: FontWeight.w300,
+                        color: Colors.white.withValues(alpha: 0.20),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+        ],
+    ];
+  }
+
+  Widget _row(String label, {required bool selected, required VoidCallback onTap}) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: Padding(
+        padding: EdgeInsets.symmetric(
+          horizontal: 48 * scale,
+          vertical: 11 * scale,
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 12 * scale,
+            height: 1.0,
+            letterSpacing: 4.6 * scale,
+            fontWeight: FontWeight.w400,
+            color: selected
+                ? accent.withValues(alpha: 0.92)
+                : Colors.white.withValues(alpha: 0.32),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The level, as a hairline with a dot on it.
+///
+/// Not a Material slider: a chrome-heavy widget with a ripple and a thumb
+/// shadow in the middle of this picture looks like it was pasted in from
+/// another program. This is the same 1-pixel rule the panel's divider uses,
+/// with the played part in the accent colour and a dot the size of a selected
+/// mood dot - the two controls in this app that mean "here" now look alike.
+class _VolumeBar extends StatelessWidget {
+  const _VolumeBar({
+    required this.value,
+    required this.accent,
+    required this.scale,
+    required this.onChanged,
+  });
+
+  final double value;
+  final Color accent;
+  final double scale;
+  final ValueChanged<double> onChanged;
+
+  static const double _floor = 0.05;
+
+  @override
+  Widget build(BuildContext context) {
+    final width = 200.0 * scale;
+
+    void emit(double dx) =>
+        onChanged((dx / width).clamp(_floor, 1.0).toDouble());
+
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTapDown: (d) => emit(d.localPosition.dx),
+      onHorizontalDragUpdate: (d) => emit(d.localPosition.dx),
+      child: SizedBox(
+        // A 44-pixel target around a 1-pixel line, the same deal as the dots.
+        width: width,
+        height: 44 * scale,
+        child: Center(
+          child: CustomPaint(
+            size: Size(width, 12 * scale),
+            painter: _VolumeBarPainter(value, accent),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _VolumeBarPainter extends CustomPainter {
+  _VolumeBarPainter(this.value, this.accent);
+
+  final double value;
+  final Color accent;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final y = size.height / 2;
+    final x = size.width * value.clamp(0.0, 1.0);
+
+    canvas.drawLine(
+      Offset(0, y),
+      Offset(size.width, y),
+      Paint()
+        ..strokeWidth = 1
+        ..color = Colors.white.withValues(alpha: 0.14),
+    );
+    canvas.drawLine(
+      Offset(0, y),
+      Offset(x, y),
+      Paint()
+        ..strokeWidth = 1
+        ..color = accent.withValues(alpha: 0.55),
+    );
+    canvas.drawCircle(
+      Offset(x, y),
+      3.5,
+      Paint()..color = accent.withValues(alpha: 0.92),
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _VolumeBarPainter old) =>
+      old.value != value || old.accent != accent;
 }

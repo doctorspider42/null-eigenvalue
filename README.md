@@ -1,6 +1,7 @@
 # Null Eigenvalue
 
-A generative drone instrument for the phone. One screen, five moods, no end.
+A generative drone instrument for the phone and the desk. One screen, five
+moods, no end.
 
 It synthesises continuously — nothing is streamed and nothing is a loop — and
 it keeps playing with the screen off, with play, pause and mood change on the
@@ -37,11 +38,43 @@ the accompaniment, on an open fifth with no third in it at all.
 From a lock screen, a headphone remote or a car, **next / previous track**
 changes mood.
 
+On a desktop it is the same screen with a pointer instead of a thumb. Moving
+the mouse raises the transport and takes the cursor away again after four
+seconds of stillness, so a drone left running all evening is the picture and
+nothing else. The keyboard reaches everything:
+
+| | |
+|---|---|
+| `space` | play / pause |
+| `1`–`6` | mood |
+| arrows | the field |
+| wheel, or `-` / `=` | volume |
+| `F` or `F11` | full screen |
+| `S` | sleep timer |
+| `D` | diagnostics |
+| `esc` | leave full screen, or close the panel |
+
+The same list is behind the gear, under the sleep durations — a chromeless app
+that also hides its shortcuts is just a locked door. On a Mac the media keys
+and Now Playing work exactly as the lock screen does on a phone; Windows and
+Linux have no equivalent to talk to.
+
+**Volume** is the desktop's own addition. A phone has a hardware rocker an inch
+from the thumb already holding it; a window is one voice among a dozen other
+things making noise, and the system mixer is several clicks away. The wheel is
+the level — the picture has nothing to scroll, and it is where every other
+player on the machine puts it — with the value appearing under the readout for
+a couple of seconds and then taking itself away again. Behind the gear it is a
+hairline with a dot on it, at the same weight as everything else there, for
+when you want to see the number rather than nudge it. It is the engine's master
+gain, underneath whatever the system says, and it is remembered between
+launches.
+
 ## Installing it
 
 Every push to `main` publishes a
-[release](https://github.com/doctorspider42/null-eigenvalue/releases) with both
-builds.
+[release](https://github.com/doctorspider42/null-eigenvalue/releases) with all
+five builds.
 
 **iPhone.** The `.ipa` is unsigned. The least painful route is to add this
 source to AltStore once:
@@ -62,6 +95,34 @@ same network as its desktop half.
 
 **Android.** The `.apk` installs directly. It is signed with a debug key, so
 the phone will ask you to allow installs from wherever you downloaded it.
+
+**Windows.** `NullEigenvalue-Setup.exe` installs into your own profile and
+needs no administrator. It is not signed, so SmartScreen will say it does not
+recognise the publisher — More info, then Run anyway.
+
+**macOS.** `NullEigenvalue.dmg`. The app is signed to itself and not notarised,
+because there are no Apple credentials in this repo, so the first launch has to
+be right-click → Open rather than a double-click. Alternatively:
+
+```bash
+xattr -dr com.apple.quarantine "/Applications/Null Eigenvalue.app"
+```
+
+**Linux.** `NullEigenvalue-x86_64.AppImage`. `chmod +x` and run it; it needs
+GTK 3, and finds ALSA, PulseAudio, PipeWire or JACK by itself at run time.
+
+### Updating a desktop build
+
+The three desktop builds ask GitHub what the newest release is — once per
+launch, at most once every six hours, several seconds after the audio is
+already running so a slow network can never be between you and the first
+sound. When there is a newer one, a line appears under the frequency readout;
+clicking it fetches that platform's installer and hands it over. Windows
+installs silently and reopens the app, macOS mounts the disk image, and Linux
+replaces the AppImage in place and asks to be restarted.
+
+A build made on your own machine has no version baked into it and therefore
+never offers anything. Only a build CI cut compares itself to a release.
 
 ## How the music works
 
@@ -126,17 +187,23 @@ second thread.
 
 ```
 lib/                     the app: one screen, one painter, one controller
+  src/platform.dart        the only file that asks which platform this is
+  src/updater.dart         the desktop builds' way of noticing a new release
 packages/nulleig/        the engine
   src/                     C++: synthesis, harmony, effects, and the device
   ios/Classes/*.mm         forwarders, so CocoaPods compiles src/ into the app
+  macos/                   the same two forwarders and a second podspec
+  windows/, linux/         CMake, one target each, same two sources
   lib/nulleig.dart         the FFI binding
+windows/installer/       the Inno Setup script CI compiles
 tools/render/            desktop harness: renders a WAV and measures it
-tools/icons/             regenerates every launcher icon
+tools/icons/             regenerates every launcher icon, all five platforms
 ```
 
-The engine is one C++ core compiled three ways: into the iOS app binary by the
-podspec, into `libnulleig.so` by CMake for Android, and into a desktop program
-that renders WAV files. Audio is produced on the OS audio thread by
+The engine is one C++ core compiled five ways: into the iOS app binary by the
+podspec, into a framework by a second podspec for the Mac, into
+`libnulleig.so` by CMake for Android and again for Linux, into `nulleig.dll`
+by CMake for Windows, and into a desktop program that renders WAV files. Audio is produced on the OS audio thread by
 [miniaudio](https://miniaud.io) — Dart is never in the path, which is what lets
 the drone survive a Flutter engine that has been suspended behind a locked
 screen. Dart sets a handful of atomics and reads a few back for the visuals.
@@ -167,12 +234,30 @@ which is the point: the field can be put in states that would take twenty
 minutes of listening to catch by accident. (Text comes out as boxes — the test
 environment has no real font. Layout and metrics are still true.)
 
+The last three are shot at the desktop window's size rather than a phone's,
+which is the one thing about that build a portrait preview cannot tell you:
+whether a composition designed for a tall narrow frame still holds when the
+frame is wider than it is tall, and whether the chrome scaled with it.
+
 ### Building the app
 
 ```bash
 flutter pub get
 flutter build apk --release
 flutter build ios --release --no-codesign
+flutter build windows --release
+flutter build macos --release
+flutter build linux --release
+```
+
+The desktop builds take `--dart-define=NE_VERSION=0.1.42`; without it the
+updater stays quiet, which is what you want while working on the app. On
+Windows, `flutter build` needs Developer Mode turned on — the Flutter tooling
+links each plugin into the build with a symlink, and creating one is a
+privileged operation otherwise:
+
+```bash
+start ms-settings:developers
 ```
 
 ## Licence
@@ -180,3 +265,7 @@ flutter build ios --release --no-codesign
 MIT. Every dependency is permissive: Flutter (BSD-3), miniaudio (public domain
 or MIT-0), `audio_service` (MIT), `shared_preferences` (BSD-3). Nothing here is
 copyleft, so a build of this can be shipped under whatever terms you like.
+
+The desktop version added no dependencies. The window switch and the updater
+are each a few dozen lines against packages that would have done considerably
+more than the one thing wanted.
