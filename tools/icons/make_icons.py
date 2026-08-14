@@ -100,6 +100,17 @@ ANDROID_SIZES = [
     ("mipmap-xxxhdpi", 192),
 ]
 
+# The names in macos/Runner/Assets.xcassets/AppIcon.appiconset/Contents.json.
+# Xcode reads that manifest, not the directory, so these have to match it
+# exactly or the build quietly ships a missing icon.
+MACOS_SIZES = [16, 32, 64, 128, 256, 512, 1024]
+
+# What goes into the .ico. Windows picks the nearest of these for the title
+# bar, the task bar, Alt-Tab and the desktop; 256 is the one Explorer uses for
+# a large-icon view, and leaving it out is what makes an app look blurry in
+# exactly one place.
+WINDOWS_ICO_SIZES = [16, 24, 32, 48, 64, 128, 256]
+
 
 def main():
     cache = {}
@@ -134,6 +145,41 @@ def main():
     ]:
         get(size).save(os.path.join(launch_dir, name))
         print("launch", name, size)
+
+    # ---------------------------------------------------------- the desktops
+    macos_dir = os.path.join(
+        ROOT, "macos", "Runner", "Assets.xcassets", "AppIcon.appiconset"
+    )
+    if os.path.isdir(macos_dir):
+        for size in MACOS_SIZES:
+            get(size).save(os.path.join(macos_dir, "app_icon_%d.png" % size))
+            print("macos", size)
+
+    windows_icon = os.path.join(
+        ROOT, "windows", "runner", "resources", "app_icon.ico"
+    )
+    if os.path.isdir(os.path.dirname(windows_icon)):
+        # Pillow builds the whole multi-resolution .ico from one image, but it
+        # downsamples internally with its own filter. Handing it the largest
+        # render and letting it do that produced a visibly softer 16x16 than
+        # rendering at 16 does, so every size is rendered at its own scale and
+        # appended - the same reason this script exists at all.
+        frames = [get(s) for s in WINDOWS_ICO_SIZES]
+        frames[-1].save(
+            windows_icon,
+            format="ICO",
+            sizes=[(s, s) for s in WINDOWS_ICO_SIZES],
+            append_images=frames[:-1],
+        )
+        print("windows", "app_icon.ico", WINDOWS_ICO_SIZES)
+
+    # Linux has no icon slot in the Flutter runner - the desktop environment
+    # takes one from the .desktop file instead, and the AppImage the release
+    # workflow builds is where that gets assembled.
+    linux_icon = os.path.join(ROOT, "linux", "nulleigenvalue.png")
+    if os.path.isdir(os.path.dirname(linux_icon)):
+        get(512).save(linux_icon)
+        print("linux", "nulleigenvalue.png", 512)
 
     print("done")
     return 0

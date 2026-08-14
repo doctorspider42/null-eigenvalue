@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!--
+	  No sandbox. This app is not distributed through the App Store - it is a
+	  disk image downloaded from a GitHub release - so the sandbox buys nothing
+	  and costs the two things the desktop build needs: reaching the releases
+	  API to find out whether there is a newer version, and handing the disk
+	  image it downloads to Finder to mount. Both are blocked in a container,
+	  and neither has a sandbox-compatible form for an app signed with nothing.
+	-->
+	<key>com.apple.security.app-sandbox</key>
+	<false/>
+	<key>com.apple.security.network.client</key>
+	<true/>
+</dict>
+</plist>

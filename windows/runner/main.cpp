@@ -1,0 +1,52 @@
+#include <flutter/dart_project.h>
+#include <flutter/flutter_view_controller.h>
+#include <windows.h>
+
+#include "flutter_window.h"
+#include "utils.h"
+
+int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
+                      _In_ wchar_t *command_line, _In_ int show_command) {
+  // Attach to console when present (e.g., 'flutter run') or create a
+  // new console when running with a debugger.
+  if (!::AttachConsole(ATTACH_PARENT_PROCESS) && ::IsDebuggerPresent()) {
+    CreateAndAttachConsole();
+  }
+
+  // Initialize COM, so that it is available for use in the library and/or
+  // plugins.
+  ::CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+
+  flutter::DartProject project(L"data");
+
+  std::vector<std::string> command_line_arguments =
+      GetCommandLineArguments();
+
+  project.set_dart_entrypoint_arguments(std::move(command_line_arguments));
+
+  FlutterWindow window(project);
+
+  // Centred, and closer to square than the template's 16:9. The picture is a
+  // 2D field the pointer moves through, so a very wide window makes the
+  // horizontal axis - brightness - travel twice as far as the vertical one for
+  // the same gesture, and the composition ends up as a stripe.
+  Win32Window::Size size(1040, 780);
+  const int screen_w = ::GetSystemMetrics(SM_CXSCREEN);
+  const int screen_h = ::GetSystemMetrics(SM_CYSCREEN);
+  Win32Window::Point origin((screen_w - static_cast<int>(size.width)) / 2,
+                            (screen_h - static_cast<int>(size.height)) / 2);
+
+  if (!window.Create(L"Null Eigenvalue", origin, size)) {
+    return EXIT_FAILURE;
+  }
+  window.SetQuitOnClose(true);
+
+  ::MSG msg;
+  while (::GetMessage(&msg, nullptr, 0, 0)) {
+    ::TranslateMessage(&msg);
+    ::DispatchMessage(&msg);
+  }
+
+  ::CoUninitialize();
+  return EXIT_SUCCESS;
+}

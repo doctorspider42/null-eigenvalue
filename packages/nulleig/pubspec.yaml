@@ -25,3 +25,13 @@ flutter:
         ffiPlugin: true
       ios:
         ffiPlugin: true
+      # The desktops. Same six source files, three more build systems: CMake
+      # for Windows and Linux, and a second podspec for macOS because
+      # CocoaPods will not let one pod serve two platforms whose frameworks
+      # differ.
+      linux:
+        ffiPlugin: true
+      macos:
+        ffiPlugin: true
+      windows:
+        ffiPlugin: true

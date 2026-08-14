@@ -1,0 +1,15 @@
+// Application-level settings for the Runner target.
+//
+// This may be replaced with something auto-generated from metadata (e.g., pubspec.yaml) in the
+// future. If not, the values below would default to using the project name when this becomes a
+// 'flutter create' template.
+
+// The application's name. By default this is also the title of the Flutter window.
+PRODUCT_NAME = Null Eigenvalue
+
+// The application's bundle identifier. The same one the iPhone build uses:
+// they are the same app, and a Mac and a phone never see each other's copy.
+PRODUCT_BUNDLE_IDENTIFIER = com.nulleigenvalue.nullEigenvalue
+
+// The copyright displayed in application information
+PRODUCT_COPYRIGHT = MIT licensed. Copyright © 2026 Null Eigenvalue.

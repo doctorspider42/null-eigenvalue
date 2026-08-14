@@ -1,14 +1,18 @@
-import 'dart:async';
+﻿import 'dart:async';
 import 'dart:math' as math;
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
+import 'package:flutter/services.dart';
 import 'package:nulleig/nulleig.dart';
 
 import 'drone_controller.dart';
 import 'hud.dart';
 import 'nebula.dart';
+import 'platform.dart';
 import 'textures.dart';
+import 'updater.dart';
 
 /// The app. There is one screen and it is the instrument.
 class FieldScreen extends StatefulWidget {
@@ -16,10 +20,12 @@ class FieldScreen extends StatefulWidget {
     super.key,
     required this.controller,
     required this.textures,
+    required this.updater,
   });
 
   final DroneController controller;
   final Textures textures;
+  final Updater updater;
 
   @override
   State<FieldScreen> createState() => _FieldScreenState();
@@ -65,6 +71,16 @@ class _FieldScreenState extends State<FieldScreen>
   double _movedPx = 0;
   bool _touching = false;
 
+  /// Desktop only. Whether the window is filling the screen, mirrored here so
+  /// that Escape knows whether it has something to leave.
+  bool _fullscreen = false;
+
+  /// Whether the level readout is currently showing. It appears when the
+  /// volume moves and takes itself away again, so the resting HUD is the same
+  /// four lines it has always been.
+  bool _volumeHint = false;
+  Timer? _volumeHintTimer;
+
   @override
   void initState() {
     super.initState();
@@ -73,6 +89,7 @@ class _FieldScreenState extends State<FieldScreen>
     _state.centre = _state.target;
     _state.palette = c.palette;
     c.addListener(_onControllerChanged);
+    widget.updater.addListener(_onControllerChanged);
     _ticker = createTicker(_onTick)..start();
     _restartHudTimer();
   }
@@ -80,8 +97,10 @@ class _FieldScreenState extends State<FieldScreen>
   @override
   void dispose() {
     _hudTimer?.cancel();
+    _volumeHintTimer?.cancel();
     _ticker.dispose();
     widget.controller.removeListener(_onControllerChanged);
+    widget.updater.removeListener(_onControllerChanged);
     _state.dispose();
     super.dispose();
   }
@@ -97,7 +116,15 @@ class _FieldScreenState extends State<FieldScreen>
     if (dt <= 0) return;
 
     final c = widget.controller;
+    // Rebuilt for as long as a mood crossfade is running. tickBlend moves the
+    // palette without notifying - correct for the picture, which re-reads it
+    // here every frame, and wrong for the HUD, which only sees it at build
+    // time. Without this the chrome keeps the *previous* mood's accent until
+    // something unrelated rebuilds it, so tapping a dot renamed the mood while
+    // leaving its colour behind.
+    final blending = c.moodBlend < 1;
     c.tickBlend(dt);
+    if (blending) setState(() {});
     c.syncFromEngine();
     _state.palette = c.palette;
 
@@ -194,6 +221,15 @@ class _FieldScreenState extends State<FieldScreen>
     }
   }
 
+  /// Desktop only. A mouse that moves over the picture raises the chrome, the
+  /// way it does over a video, and four seconds of stillness takes it away
+  /// again - the pointer with it, so that a drone left running overnight is
+  /// the picture and nothing else.
+  void _onHover(PointerHoverEvent event) {
+    if (event.delta == Offset.zero) return;
+    _showHud();
+  }
+
   void _showHud() {
     if (!_hudVisible) setState(() => _hudVisible = true);
     _restartHudTimer();
@@ -213,13 +249,172 @@ class _FieldScreenState extends State<FieldScreen>
     });
   }
 
+  // ------------------------------------------------------------- keyboard
+
+  /// The keyboard is the desktop's version of the lock-screen controls: a way
+  /// to drive the instrument without aiming at anything. The bindings are
+  /// listed under the sleep options behind the gear, because a chromeless app
+  /// that also hides its shortcuts is just a locked door.
+  KeyEventResult _onKey(FocusNode node, KeyEvent event) {
+    if (event is KeyUpEvent) return KeyEventResult.ignored;
+    final c = widget.controller;
+    final key = event.logicalKey;
+
+    // Escape unwinds one layer at a time: the panel, then the window.
+    if (key == LogicalKeyboardKey.escape) {
+      if (_sleepVisible) {
+        _closeSleep();
+      } else if (_fullscreen) {
+        _toggleFullscreen();
+      } else {
+        return KeyEventResult.ignored;
+      }
+      return KeyEventResult.handled;
+    }
+
+    if (key == LogicalKeyboardKey.space) {
+      c.toggle();
+      _showHud();
+      return KeyEventResult.handled;
+    }
+
+    if (key == LogicalKeyboardKey.f11 || key == LogicalKeyboardKey.keyF) {
+      _toggleFullscreen();
+      return KeyEventResult.handled;
+    }
+
+    if (key == LogicalKeyboardKey.keyS) {
+      setState(() => _sleepVisible = !_sleepVisible);
+      _hudTimer?.cancel();
+      return KeyEventResult.handled;
+    }
+
+    // Where every application that has a zoom puts its zoom, and this app has
+    // no zoom. Both the main row and the numeric keypad.
+    if (key == LogicalKeyboardKey.minus ||
+        key == LogicalKeyboardKey.numpadSubtract) {
+      _changeVolume(-0.04);
+      return KeyEventResult.handled;
+    }
+    if (key == LogicalKeyboardKey.equal ||
+        key == LogicalKeyboardKey.add ||
+        key == LogicalKeyboardKey.numpadAdd) {
+      _changeVolume(0.04);
+      return KeyEventResult.handled;
+    }
+
+    if (key == LogicalKeyboardKey.keyD) {
+      setState(() => _forceDiagnostics = !_forceDiagnostics);
+      _showHud();
+      return KeyEventResult.handled;
+    }
+
+    // The six moods, in the order the dots are drawn.
+    const digits = <LogicalKeyboardKey>[
+      LogicalKeyboardKey.digit1,
+      LogicalKeyboardKey.digit2,
+      LogicalKeyboardKey.digit3,
+      LogicalKeyboardKey.digit4,
+      LogicalKeyboardKey.digit5,
+      LogicalKeyboardKey.digit6,
+    ];
+    final mood = digits.indexOf(key);
+    if (mood >= 0 && mood < neMoodCount) {
+      c.setMood(mood);
+      _showHud();
+      return KeyEventResult.handled;
+    }
+
+    // The arrows are the field itself, not a menu: the same two axes the
+    // pointer drags through, in steps small enough that holding a key reads as
+    // a slow sweep rather than as a jump.
+    const step = 0.035;
+    Offset? nudge;
+    if (key == LogicalKeyboardKey.arrowLeft) nudge = const Offset(-step, 0);
+    if (key == LogicalKeyboardKey.arrowRight) nudge = const Offset(step, 0);
+    if (key == LogicalKeyboardKey.arrowUp) nudge = const Offset(0, -step);
+    if (key == LogicalKeyboardKey.arrowDown) nudge = const Offset(0, step);
+    if (nudge != null) {
+      _nudgeField(nudge);
+      return KeyEventResult.handled;
+    }
+
+    return KeyEventResult.ignored;
+  }
+
+  void _nudgeField(Offset delta) {
+    _state.target = Offset(
+      (_state.target.dx + delta.dx).clamp(0.0, 1.0),
+      (_state.target.dy + delta.dy).clamp(0.0, 1.0),
+    );
+    // A trail point, same as a drag leaves. Without it the composition slides
+    // and nothing marks that it was asked to.
+    _state.addTrail(_state.target);
+    widget.controller.setField(
+      _state.target.dx,
+      1 - _state.target.dy,
+      touching: false,
+    );
+  }
+
+  // --------------------------------------------------------------- volume
+
+  /// The wheel is the level. It is the one gesture a desktop has spare - the
+  /// picture has nothing to scroll - and it is where every other player on the
+  /// machine already puts it.
+  void _onPointerSignal(PointerSignalEvent event) {
+    if (event is! PointerScrollEvent) return;
+    // While the panel is open the wheel belongs to the panel, which has a
+    // level control of its own and, in a short window, more rows than fit.
+    if (_sleepVisible) return;
+    // Sign only, not magnitude: a trackpad's fling delivers deltas an order of
+    // magnitude larger than a wheel's detent, and scaling by them made a flick
+    // go from silence to full.
+    _changeVolume(event.scrollDelta.dy > 0 ? -0.04 : 0.04);
+  }
+
+  void _changeVolume(double delta) {
+    widget.controller.nudgeVolume(delta);
+    _showVolumeHint();
+  }
+
+  void _showVolumeHint() {
+    if (!_volumeHint) setState(() => _volumeHint = true);
+    _showHud();
+    _volumeHintTimer?.cancel();
+    _volumeHintTimer = Timer(const Duration(milliseconds: 2200), () {
+      if (mounted) setState(() => _volumeHint = false);
+    });
+  }
+
+  Future<void> _toggleFullscreen() async {
+    final now = await AppWindow.toggleFullscreen();
+    if (mounted) setState(() => _fullscreen = now);
+  }
+
   @override
   Widget build(BuildContext context) {
     final c = widget.controller;
     final palette = c.palette;
     final media = MediaQuery.of(context);
 
-    return Scaffold(
+    // The phone's proportions are the design; a window is simply a bigger
+    // sheet of the same thing. One number, so the transport, the dots and the
+    // lettering all grow together and nothing has to be redrawn by hand.
+    final shortest = media.size.shortestSide;
+    final scale =
+        isDesktop ? (shortest / 620).clamp(1.0, 1.5).toDouble() : 1.0;
+
+    // Nothing to point at while the chrome is away, so the pointer goes too.
+    final hideCursor = isDesktop && !_hudVisible && !_sleepVisible;
+
+    // The HUD stands down while the panel is open. It was always dead under
+    // there - the panel's scrim is opaque to hits, so a tap on the transport
+    // closed the panel rather than pausing anything - and once the panel grew
+    // a key legend on the desktop the two also collided outright.
+    final chrome = _hudVisible && !_sleepVisible;
+
+    final Widget screen = Scaffold(
       backgroundColor: palette.bg,
       body: Stack(
         fit: StackFit.expand,
@@ -245,20 +440,20 @@ class _FieldScreenState extends State<FieldScreen>
 
           // Wordmark. Visible with the HUD only - it is a title, not a status.
           Positioned(
-            top: media.padding.top + 22,
+            top: media.padding.top + 22 * scale,
             left: 0,
             right: 0,
             child: IgnorePointer(
               child: AnimatedOpacity(
-                opacity: _hudVisible ? 1 : 0,
+                opacity: chrome ? 1 : 0,
                 duration: const Duration(milliseconds: 550),
                 curve: Curves.easeOut,
                 child: Text(
                   'NULL EIGENVALUE',
                   textAlign: TextAlign.center,
                   style: TextStyle(
-                    fontSize: 11,
-                    letterSpacing: 6.5,
+                    fontSize: 11 * scale,
+                    letterSpacing: 6.5 * scale,
                     fontWeight: FontWeight.w300,
                     color: Colors.white.withValues(alpha: 0.34),
                   ),
@@ -273,13 +468,14 @@ class _FieldScreenState extends State<FieldScreen>
             top: media.padding.top + 8,
             right: 10,
             child: AnimatedOpacity(
-              opacity: _hudVisible ? 1 : 0,
+              opacity: chrome ? 1 : 0,
               duration: const Duration(milliseconds: 550),
               curve: Curves.easeOut,
               child: IgnorePointer(
-                ignoring: !_hudVisible,
+                ignoring: !chrome,
                 child: GearButton(
                   colour: palette.accent,
+                  scale: scale,
                   onTap: () {
                     setState(() => _sleepVisible = true);
                     _hudTimer?.cancel();
@@ -292,19 +488,25 @@ class _FieldScreenState extends State<FieldScreen>
           Align(
             alignment: Alignment.bottomCenter,
             child: Padding(
-              padding: EdgeInsets.only(bottom: media.padding.bottom + 34),
+              padding: EdgeInsets.only(bottom: media.padding.bottom + 34 * scale),
               child: AnimatedOpacity(
-                opacity: _hudVisible ? 1 : 0,
+                opacity: chrome ? 1 : 0,
                 duration: const Duration(milliseconds: 550),
                 curve: Curves.easeOut,
                 child: IgnorePointer(
-                  ignoring: !_hudVisible,
+                  ignoring: !chrome,
                   child: Hud(
                     palette: palette,
                     mood: c.mood,
                     playing: c.playing,
                     rootHz: _state.vis.rootHz,
+                    scale: scale,
                     sleepLabel: _sleepLabel(c),
+                    updateLabel: _updateLabel(),
+                    onUpdateTap: _onUpdateTap,
+                    volumeLabel: _volumeHint
+                        ? 'VOLUME ${(c.volume * 100).round()}%'
+                        : null,
                     diagnostics: _diagnostics(c),
                     onDiagnosticsTap: () {
                       setState(() => _forceDiagnostics = !_forceDiagnostics);
@@ -340,10 +542,16 @@ class _FieldScreenState extends State<FieldScreen>
                   child: Container(
                     color: Colors.black.withValues(alpha: 0.55),
                     child: Center(
-                      child: _SleepPanel(
+                      child: SleepPanel(
                         accent: palette.accent,
                         remaining: c.sleepRemaining,
                         choice: c.sleepChoice,
+                        scale: scale,
+                        showKeys: isDesktop,
+                        // A phone has a hardware volume rocker an inch from
+                        // the thumb already holding it; a window does not.
+                        volume: isDesktop ? c.volume : null,
+                        onVolume: c.setVolume,
                         onPick: _pickSleep,
                       ),
                     ),
@@ -353,6 +561,29 @@ class _FieldScreenState extends State<FieldScreen>
             ),
           ),
         ],
+      ),
+    );
+
+    if (!isDesktop) return screen;
+
+    // Desktop only, and in this order: the pointer layer has to be inside the
+    // focus layer, or a click on the picture would move focus off the node
+    // that owns the keyboard and the shortcuts would go dead after the first
+    // drag.
+    return Focus(
+      autofocus: true,
+      onKeyEvent: _onKey,
+      child: MouseRegion(
+        cursor: hideCursor ? SystemMouseCursors.none : MouseCursor.defer,
+        onHover: _onHover,
+        // Outside the MouseRegion's child rather than inside the Scaffold, so
+        // the wheel works over the whole window - including over the HUD,
+        // where a scroll that did nothing would read as the control being
+        // stuck rather than as the HUD not being a scrollable thing.
+        child: Listener(
+          onPointerSignal: _onPointerSignal,
+          child: screen,
+        ),
       ),
     );
   }
@@ -377,6 +608,32 @@ class _FieldScreenState extends State<FieldScreen>
     final mm = m.toString().padLeft(2, '0');
     final ss = s.toString().padLeft(2, '0');
     return h > 0 ? 'SLEEP $h:$mm:$ss' : 'SLEEP $m:$ss';
+  }
+
+  /// One line about the newer version, in the same whisper as everything else
+  /// down there. Null - which is almost always - means the app says nothing
+  /// about updates at all.
+  String? _updateLabel() {
+    final u = widget.updater;
+    switch (u.stage) {
+      case UpdateStage.idle:
+        return null;
+      case UpdateStage.available:
+        return 'UPDATE ${u.latest}';
+      case UpdateStage.downloading:
+        return 'UPDATING ${(u.progress * 100).round()}%';
+      case UpdateStage.ready:
+        return u.handoff ?? 'RESTARTING';
+      case UpdateStage.failed:
+        return 'UPDATE FAILED';
+    }
+  }
+
+  void _onUpdateTap() {
+    final u = widget.updater;
+    if (u.stage != UpdateStage.available) return;
+    unawaited(u.install());
+    _restartHudTimer();
   }
 
   /// The lines to show under the readout, or null to show nothing.
@@ -411,71 +668,3 @@ class _FieldScreenState extends State<FieldScreen>
   }
 }
 
-/// The sleep timer's face: a title, five durations and OFF, in the same
-/// typography as the mood name. The active choice is the accent colour;
-/// everything else keeps the HUD's whisper-grey, so even fully open this is
-/// barely a dialog.
-class _SleepPanel extends StatelessWidget {
-  const _SleepPanel({
-    required this.accent,
-    required this.remaining,
-    required this.choice,
-    required this.onPick,
-  });
-
-  final Color accent;
-  final Duration? remaining;
-  final Duration? choice;
-  final ValueChanged<Duration?> onPick;
-
-  static const List<int> _minutes = <int>[15, 30, 45, 60, 90];
-
-  @override
-  Widget build(BuildContext context) {
-    final armed = remaining != null;
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: <Widget>[
-        Text(
-          'SLEEP',
-          style: TextStyle(
-            fontSize: 12,
-            letterSpacing: 6.5,
-            fontWeight: FontWeight.w300,
-            color: Colors.white.withValues(alpha: 0.45),
-          ),
-        ),
-        const SizedBox(height: 26),
-        _row('OFF', selected: !armed, onTap: () => onPick(null)),
-        for (final m in _minutes)
-          _row(
-            '$m MIN',
-            selected: armed && choice?.inMinutes == m,
-            onTap: () => onPick(Duration(minutes: m)),
-          ),
-      ],
-    );
-  }
-
-  Widget _row(String label, {required bool selected, required VoidCallback onTap}) {
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 48, vertical: 11),
-        child: Text(
-          label,
-          style: TextStyle(
-            fontSize: 12,
-            height: 1.0,
-            letterSpacing: 4.6,
-            fontWeight: FontWeight.w400,
-            color: selected
-                ? accent.withValues(alpha: 0.92)
-                : Colors.white.withValues(alpha: 0.32),
-          ),
-        ),
-      ),
-    );
-  }
-}

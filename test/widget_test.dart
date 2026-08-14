@@ -11,6 +11,7 @@ import 'dart:ui';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:null_eigenvalue/src/palette.dart';
+import 'package:null_eigenvalue/src/updater.dart';
 import 'package:nulleig/nulleig.dart';
 
 void main() {
@@ -61,6 +62,39 @@ void main() {
   test('an empty vis snapshot is the right shape', () {
     expect(DroneVis.empty.bands.length, neBands);
     expect(DroneVis.empty.gate, 0);
+  });
+
+  // The desktop updater's one piece of pure logic, and the one place it could
+  // do harm: say yes wrongly and it downloads an installer nobody asked for.
+  group('version comparison', () {
+    test('a higher patch is newer', () {
+      expect(isNewerVersion('0.1.42', '0.1.41'), isTrue);
+      expect(isNewerVersion('0.1.41', '0.1.42'), isFalse);
+    });
+
+    test('the same version is not newer', () {
+      expect(isNewerVersion('0.1.7', '0.1.7'), isFalse);
+    });
+
+    test('components are compared as numbers, not as text', () {
+      // The bug this exists to prevent: CI's patch number is the run number,
+      // so it goes past 9 on the tenth push and string ordering would then
+      // stop offering updates for good.
+      expect(isNewerVersion('0.1.10', '0.1.9'), isTrue);
+      expect(isNewerVersion('0.2.0', '0.10.0'), isFalse);
+    });
+
+    test('a missing component counts as zero', () {
+      expect(isNewerVersion('0.2', '0.1.9'), isTrue);
+      expect(isNewerVersion('0.1', '0.1.0'), isFalse);
+    });
+
+    test('anything unparseable is not newer', () {
+      // A malformed tag must be able to fail in one direction only.
+      expect(isNewerVersion('nightly', '0.1.7'), isFalse);
+      expect(isNewerVersion('0.1.7-rc1', '0.1.6'), isFalse);
+      expect(isNewerVersion('0.1.8', ''), isFalse);
+    });
   });
 }
 
