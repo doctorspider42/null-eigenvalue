@@ -28,9 +28,28 @@ String? get _assetForThisPlatform {
 }
 
 /// Where the update has got to.
+///
+/// Four of these are worth interrupting the picture for and four are not, which
+/// is the whole reason the list is this long: the HUD shows only the states
+/// that are about a newer version actually existing, and the panel - where the
+/// user went looking - shows all of them.
 enum UpdateStage {
   /// Nothing found, or nothing looked for yet.
   idle,
+
+  /// Asking GitHub. Only ever visible in the panel, and only during a check
+  /// the user asked for: the automatic one happens six seconds after launch
+  /// with nobody looking.
+  checking,
+
+  /// Asked, and this is the newest there is.
+  upToDate,
+
+  /// Could not ask - offline, rate-limited, GitHub having a day. Distinct from
+  /// [failed], which is a download that went wrong, because the two want
+  /// different things from the reader and only one of them is worth a word on
+  /// the picture.
+  checkFailed,
 
   /// A newer release exists and its installer is waiting to be fetched.
   available,
@@ -43,7 +62,7 @@ enum UpdateStage {
   /// where.
   ready,
 
-  /// Something went wrong. Never fatal - see [Updater.check].
+  /// The download or the hand-off went wrong. Never fatal - see [Updater.check].
   failed,
 }
 
@@ -77,9 +96,20 @@ class Updater extends ChangeNotifier {
   /// Windows, where the installer simply takes over.
   String? handoff;
 
+  /// Whether the app looks for a new version by itself.
+  ///
+  /// On by default and switchable off from the panel. Off stops the automatic
+  /// check only - the button next to it still works, because "do not go to the
+  /// network behind my back" and "never tell me about a new version again" are
+  /// different wishes and the first one is the common one.
+  bool auto = true;
+
   Uri? _asset;
   int _assetBytes = 0;
   bool _busy = false;
+
+  /// Whether a check or a download is in flight.
+  bool get busy => _busy;
 
   /// Whether the app should show anything at all about updates. A dev build
   /// has no version to compare, and a phone gets its updates from AltStore or
@@ -88,14 +118,55 @@ class Updater extends ChangeNotifier {
       current.isNotEmpty &&
       (Platform.isWindows || Platform.isMacOS || Platform.isLinux);
 
+  /// Reads the one preference this object owns.
+  ///
+  /// Separate from the constructor because it touches disk and the app is not
+  /// going to wait on it: the panel is several seconds of interaction away and
+  /// the automatic check is six.
+  Future<void> load() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      auto = prefs.getBool('updateAuto') ?? true;
+    } catch (_) {
+      // A machine that will not give us preferences gets the default, which is
+      // the same thing it would have got the first time anyway.
+    }
+    notifyListeners();
+  }
+
+  /// Turns the automatic check on or off.
+  Future<void> setAuto(bool value) async {
+    if (auto == value) return;
+    auto = value;
+    notifyListeners();
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool('updateAuto', value);
+    } catch (_) {
+      // The switch still holds for this run; it just will not be remembered.
+    }
+  }
+
   /// Asks GitHub what the newest release is.
   ///
-  /// At most once every six hours across launches. The releases API is
-  /// unauthenticated here, which means sixty requests an hour from one
+  /// Automatically at most once every six hours across launches. The releases
+  /// API is unauthenticated here, which means sixty requests an hour from one
   /// address; an app that is meant to be left running for a whole evening
   /// should not be spending them on a question whose answer changes weekly.
+  ///
+  /// [force] is the button in the panel: it ignores both the six hours and the
+  /// automatic switch, because a check the user asked for out loud is not the
+  /// thing either of those was protecting them from.
   Future<void> check({bool force = false}) async {
     if (!enabled || _busy) return;
+    if (!force && !auto) return;
+    // Deliberately not shown for the automatic check. Six seconds after launch
+    // nobody is looking at the panel, and a "CHECKING" that flickers past on
+    // its own is noise.
+    if (force) {
+      stage = UpdateStage.checking;
+      notifyListeners();
+    }
     _busy = true;
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -109,11 +180,19 @@ class Updater extends ChangeNotifier {
         Uri.https('api.github.com', '/repos/$repo/releases/latest'),
       );
       await prefs.setInt('updateCheckedAt', now);
-      if (release == null) return;
+      if (release == null) {
+        stage = UpdateStage.checkFailed;
+        notifyListeners();
+        return;
+      }
 
       final tag = (release['tag_name'] as String?) ?? '';
       final version = tag.startsWith('v') ? tag.substring(1) : tag;
-      if (version.isEmpty || !isNewerVersion(version, current)) return;
+      if (version.isEmpty || !isNewerVersion(version, current)) {
+        stage = UpdateStage.upToDate;
+        notifyListeners();
+        return;
+      }
 
       final wanted = _assetForThisPlatform;
       if (wanted == null) return;
@@ -130,13 +209,20 @@ class Updater extends ChangeNotifier {
         return;
       }
       // A release with no build for this platform yet. CI publishes all of
-      // them in one job, so this means the run is still going - say nothing
-      // and pick it up on the next check.
+      // them in one job, so this means the run is still going - report the
+      // truth, which is that there is nothing to fetch, and pick it up on the
+      // next check.
+      stage = UpdateStage.upToDate;
+      notifyListeners();
     } catch (_) {
       // Offline, rate-limited, GitHub down, a JSON shape we did not expect.
-      // None of that is worth a word on screen: the app's job is the drone.
+      // None of that is worth a word on the picture - but it is worth one in
+      // the panel, where somebody is waiting for an answer.
+      stage = UpdateStage.checkFailed;
+      notifyListeners();
     } finally {
       _busy = false;
+      notifyListeners();
     }
   }
 

@@ -421,16 +421,22 @@ class _TransportPainter extends CustomPainter {
       old.t != t || old.colour != colour;
 }
 
-/// The sleep timer's face: a title, five durations and OFF, in the same
-/// typography as the mood name. The active choice is the accent colour;
-/// everything else keeps the HUD's whisper-grey, so even fully open this is
-/// barely a dialog.
+/// Everything the app can be told to do, on one surface behind the gear.
 ///
-/// On a desktop it carries the key bindings as well. They belong here rather
-/// than on the picture: this is the only surface in the app that is allowed to
-/// be a list of words, and shortcuts nobody can find are shortcuts nobody has.
-class SleepPanel extends StatelessWidget {
-  const SleepPanel({
+/// It began as the sleep timer and kept its typography: a heading, then rows in
+/// the mood name's face, the live one in the accent colour and the rest in the
+/// HUD's whisper-grey, so even fully open this is barely a dialog. The desktop
+/// added a level, an updates section and the key bindings - the last of those
+/// belong here rather than on the picture, because this is the only surface in
+/// the app allowed to be a list of words, and shortcuts nobody can find are
+/// shortcuts nobody has.
+///
+/// On a window wide enough it lays out as two columns. One column was correct
+/// while this was six durations; with four sections it ran off the bottom of
+/// the default window, and a desktop has width going spare where it does not
+/// have height.
+class SettingsPanel extends StatelessWidget {
+  const SettingsPanel({
     super.key,
     required this.accent,
     required this.remaining,
@@ -440,6 +446,7 @@ class SleepPanel extends StatelessWidget {
     this.showKeys = false,
     this.volume,
     this.onVolume,
+    this.updates,
   });
 
   final Color accent;
@@ -447,6 +454,10 @@ class SleepPanel extends StatelessWidget {
   final Duration? choice;
   final ValueChanged<Duration?> onPick;
   final double scale;
+
+  /// Whether to show the key bindings, which is to say whether there is a
+  /// keyboard. Also what decides the two-column layout, since it is the only
+  /// section big enough to want one.
   final bool showKeys;
 
   /// The master level, 0..1, or null to leave the section out entirely - which
@@ -454,6 +465,11 @@ class SleepPanel extends StatelessWidget {
   /// the user's thumb.
   final double? volume;
   final ValueChanged<double>? onVolume;
+
+  /// The updates section, or null to leave it out. Null on a phone, and on a
+  /// build CI did not cut - there is nothing there to compare against a
+  /// release, so an "up to date" would be a guess.
+  final UpdatePanel? updates;
 
   static const List<int> _minutes = <int>[15, 30, 45, 60, 90];
 
@@ -470,113 +486,171 @@ class SleepPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final armed = remaining != null;
-    // Scrollable, because the window has a floor of 480 logical pixels and
-    // this column - six durations, a level and eight key bindings - is taller
-    // than that. It shrink-wraps in both axes against the loose constraints a
-    // Center hands it, so on any ordinary window there is nothing to scroll
-    // and no sign that there could be.
+    final settings = Column(
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        ..._sleepSection(),
+        if (volume != null) ...<Widget>[_divider(), ..._volumeSection()],
+        if (updates != null) ...<Widget>[_divider(), ..._updatesSection()],
+      ],
+    );
+
+    // Scrollable regardless of the layout, because the window has a floor of
+    // 480 logical pixels and the left column alone is taller than that. It
+    // shrink-wraps against the loose constraints a Center hands it, so on any
+    // ordinary window there is nothing to scroll and no sign that there could
+    // be.
     return SingleChildScrollView(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: _children(armed),
-      ),
+      child: showKeys
+          ? Row(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                settings,
+                SizedBox(width: 56 * scale),
+                Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: _keysSection(),
+                ),
+              ],
+            )
+          : settings,
     );
   }
 
-  List<Widget> _children(bool armed) {
-    return <Widget>[
-        Text(
-          'SLEEP',
+  Widget _divider() => Padding(
+        padding: EdgeInsets.symmetric(vertical: 24 * scale),
+        child: Container(
+          width: 200 * scale,
+          height: 1,
+          color: Colors.white.withValues(alpha: 0.08),
+        ),
+      );
+
+  Widget _heading(String text) => Text(
+        text,
+        style: TextStyle(
+          fontSize: 11 * scale,
+          height: 1.0,
+          letterSpacing: 4.6 * scale,
+          fontWeight: FontWeight.w300,
+          color: Colors.white.withValues(alpha: 0.45),
+        ),
+      );
+
+  /// A line of information rather than a control: the level, what the last
+  /// check found. Quieter than the rows above it, so the eye reads the things
+  /// it can touch first.
+  Widget _note(String text) => Padding(
+        padding: EdgeInsets.only(top: 4 * scale),
+        child: Text(
+          text,
+          textAlign: TextAlign.center,
           style: TextStyle(
-            fontSize: 12 * scale,
-            letterSpacing: 6.5 * scale,
+            fontSize: 10 * scale,
+            height: 1.2,
+            letterSpacing: 2.4 * scale,
             fontWeight: FontWeight.w300,
-            color: Colors.white.withValues(alpha: 0.45),
+            color: Colors.white.withValues(alpha: 0.28),
           ),
         ),
-        SizedBox(height: 26 * scale),
-        _row('OFF', selected: !armed, onTap: () => onPick(null)),
-        for (final m in _minutes)
-          _row(
-            '$m MIN',
-            selected: armed && choice?.inMinutes == m,
-            onTap: () => onPick(Duration(minutes: m)),
-          ),
-        if (volume != null) ...<Widget>[
-          SizedBox(height: 24 * scale),
-          Container(
-            width: 200 * scale,
-            height: 1,
-            color: Colors.white.withValues(alpha: 0.08),
-          ),
-          SizedBox(height: 24 * scale),
-          Text(
-            'VOLUME ${(volume! * 100).round()}%',
-            style: TextStyle(
-              fontSize: 11 * scale,
-              height: 1.0,
-              letterSpacing: 4.6 * scale,
-              fontWeight: FontWeight.w300,
-              color: Colors.white.withValues(alpha: 0.45),
-            ),
-          ),
-          SizedBox(height: 16 * scale),
-          _VolumeBar(
-            value: volume!,
-            accent: accent,
-            scale: scale,
-            onChanged: onVolume ?? (_) {},
-          ),
-        ],
-        if (showKeys) ...<Widget>[
-          SizedBox(height: 24 * scale),
-          Container(
-            width: 200 * scale,
-            height: 1,
-            color: Colors.white.withValues(alpha: 0.08),
-          ),
-          SizedBox(height: 22 * scale),
-          for (final k in _keys)
-            Padding(
-              padding: EdgeInsets.symmetric(vertical: 3.5 * scale),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: <Widget>[
-                  SizedBox(
-                    width: 92 * scale,
-                    child: Text(
-                      k[0],
-                      textAlign: TextAlign.right,
-                      style: TextStyle(
-                        fontSize: 10 * scale,
-                        height: 1.0,
-                        letterSpacing: 2.4 * scale,
-                        fontWeight: FontWeight.w400,
-                        color: Colors.white.withValues(alpha: 0.34),
-                      ),
-                    ),
-                  ),
-                  SizedBox(width: 26 * scale),
-                  SizedBox(
-                    width: 132 * scale,
-                    child: Text(
-                      k[1],
-                      style: TextStyle(
-                        fontSize: 10 * scale,
-                        height: 1.0,
-                        letterSpacing: 2.4 * scale,
-                        fontWeight: FontWeight.w300,
-                        color: Colors.white.withValues(alpha: 0.20),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-        ],
+      );
+
+  List<Widget> _sleepSection() {
+    final armed = remaining != null;
+    return <Widget>[
+      Text(
+        'SLEEP',
+        style: TextStyle(
+          fontSize: 12 * scale,
+          letterSpacing: 6.5 * scale,
+          fontWeight: FontWeight.w300,
+          color: Colors.white.withValues(alpha: 0.45),
+        ),
+      ),
+      SizedBox(height: 26 * scale),
+      _row('OFF', selected: !armed, onTap: () => onPick(null)),
+      for (final m in _minutes)
+        _row(
+          '$m MIN',
+          selected: armed && choice?.inMinutes == m,
+          onTap: () => onPick(Duration(minutes: m)),
+        ),
     ];
   }
+
+  List<Widget> _volumeSection() => <Widget>[
+        _heading('VOLUME ${(volume! * 100).round()}%'),
+        SizedBox(height: 16 * scale),
+        _VolumeBar(
+          value: volume!,
+          accent: accent,
+          scale: scale,
+          onChanged: onVolume ?? (_) {},
+        ),
+      ];
+
+  List<Widget> _updatesSection() => <Widget>[
+        _heading('UPDATES'),
+        SizedBox(height: 12 * scale),
+        // Two rows in the same shape as the sleep durations: the switch, which
+        // reads as on when it is the accent colour, and the button.
+        _row(
+          'AUTOMATIC',
+          selected: updates!.auto,
+          onTap: () => updates!.onAuto(!updates!.auto),
+        ),
+        _row(
+          'CHECK NOW',
+          // Never the accent: it is a verb, not a setting, and colouring it
+          // like an armed sleep duration would read as a state.
+          selected: false,
+          onTap: updates!.busy ? () {} : updates!.onCheck,
+        ),
+        _note(updates!.status),
+      ];
+
+  List<Widget> _keysSection() => <Widget>[
+        _heading('KEYS'),
+        SizedBox(height: 22 * scale),
+        for (final k in _keys)
+          Padding(
+            padding: EdgeInsets.symmetric(vertical: 3.5 * scale),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                SizedBox(
+                  width: 92 * scale,
+                  child: Text(
+                    k[0],
+                    textAlign: TextAlign.right,
+                    style: TextStyle(
+                      fontSize: 10 * scale,
+                      height: 1.0,
+                      letterSpacing: 2.4 * scale,
+                      fontWeight: FontWeight.w400,
+                      color: Colors.white.withValues(alpha: 0.34),
+                    ),
+                  ),
+                ),
+                SizedBox(width: 26 * scale),
+                SizedBox(
+                  width: 132 * scale,
+                  child: Text(
+                    k[1],
+                    style: TextStyle(
+                      fontSize: 10 * scale,
+                      height: 1.0,
+                      letterSpacing: 2.4 * scale,
+                      fontWeight: FontWeight.w300,
+                      color: Colors.white.withValues(alpha: 0.20),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+      ];
 
   Widget _row(String label, {required bool selected, required VoidCallback onTap}) {
     return GestureDetector(
@@ -687,4 +761,34 @@ class _VolumeBarPainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant _VolumeBarPainter old) =>
       old.value != value || old.accent != accent;
+}
+
+/// What the panel needs to know about updates, and what to call when the user
+/// touches one of the two rows.
+///
+/// A plain value rather than a reference to the Updater, so hud.dart keeps
+/// knowing nothing about HTTP and the preview harness can pose the section in
+/// states - mid-check, rate-limited - that are awkward to reach for real.
+class UpdatePanel {
+  const UpdatePanel({
+    required this.auto,
+    required this.busy,
+    required this.status,
+    required this.onAuto,
+    required this.onCheck,
+  });
+
+  /// Whether the app looks for a new version by itself.
+  final bool auto;
+
+  /// A check or a download is in flight; the button should not start another.
+  final bool busy;
+
+  /// One line under the two rows: what the last check found, or what this
+  /// build is. Always present - a section that is sometimes three rows and
+  /// sometimes two makes the panel jump when it is opened.
+  final String status;
+
+  final ValueChanged<bool> onAuto;
+  final VoidCallback onCheck;
 }

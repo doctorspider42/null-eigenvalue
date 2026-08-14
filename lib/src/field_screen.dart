@@ -448,15 +448,37 @@ class _FieldScreenState extends State<FieldScreen>
                 opacity: chrome ? 1 : 0,
                 duration: const Duration(milliseconds: 550),
                 curve: Curves.easeOut,
-                child: Text(
-                  'NULL EIGENVALUE',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontSize: 11 * scale,
-                    letterSpacing: 6.5 * scale,
-                    fontWeight: FontWeight.w300,
-                    color: Colors.white.withValues(alpha: 0.34),
-                  ),
+                // The name, and after it the version at half the name's
+                // weight. A downloaded app has no store page to look at, so
+                // "which one am I running" has to be answerable from the app
+                // itself - but it is a footnote to the title, not a second
+                // title, so it shares the line and stays quieter than the
+                // frequency readout.
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.baseline,
+                  textBaseline: TextBaseline.alphabetic,
+                  children: <Widget>[
+                    Text(
+                      'NULL EIGENVALUE',
+                      style: TextStyle(
+                        fontSize: 11 * scale,
+                        letterSpacing: 6.5 * scale,
+                        fontWeight: FontWeight.w300,
+                        color: Colors.white.withValues(alpha: 0.34),
+                      ),
+                    ),
+                    if (_versionLabel != null)
+                      Text(
+                        _versionLabel!,
+                        style: TextStyle(
+                          fontSize: 10 * scale,
+                          letterSpacing: 2.4 * scale,
+                          fontWeight: FontWeight.w300,
+                          color: Colors.white.withValues(alpha: 0.18),
+                        ),
+                      ),
+                  ],
                 ),
               ),
             ),
@@ -542,7 +564,7 @@ class _FieldScreenState extends State<FieldScreen>
                   child: Container(
                     color: Colors.black.withValues(alpha: 0.55),
                     child: Center(
-                      child: SleepPanel(
+                      child: SettingsPanel(
                         accent: palette.accent,
                         remaining: c.sleepRemaining,
                         choice: c.sleepChoice,
@@ -552,6 +574,20 @@ class _FieldScreenState extends State<FieldScreen>
                         // the thumb already holding it; a window does not.
                         volume: isDesktop ? c.volume : null,
                         onVolume: c.setVolume,
+                        // Only where there is a version to compare. A build
+                        // CI did not cut would be claiming to be up to date
+                        // on no evidence at all.
+                        updates: widget.updater.enabled
+                            ? UpdatePanel(
+                                auto: widget.updater.auto,
+                                busy: widget.updater.busy,
+                                status: _updateStatus(),
+                                onAuto: (v) =>
+                                    unawaited(widget.updater.setAuto(v)),
+                                onCheck: () => unawaited(
+                                    widget.updater.check(force: true)),
+                              )
+                            : null,
                         onPick: _pickSleep,
                       ),
                     ),
@@ -610,13 +646,32 @@ class _FieldScreenState extends State<FieldScreen>
     return h > 0 ? 'SLEEP $h:$mm:$ss' : 'SLEEP $m:$ss';
   }
 
+  /// What to draw after the wordmark, or null where there is nothing worth
+  /// drawing.
+  ///
+  /// Desktop only. CI bakes NE_VERSION into those builds because they are
+  /// downloaded rather than installed from a store and there is no store page
+  /// to go and read; a phone would have nothing here but the word DEV.
+  String? get _versionLabel {
+    if (!isDesktop) return null;
+    return buildVersion.isEmpty ? '  DEV' : '  $buildVersion';
+  }
+
   /// One line about the newer version, in the same whisper as everything else
   /// down there. Null - which is almost always - means the app says nothing
   /// about updates at all.
+  ///
+  /// Only the states that are about a newer version actually existing appear
+  /// here. "Checking", "up to date" and "could not check" are answers to a
+  /// question asked in the panel and they belong in the panel: putting them on
+  /// the picture would mean the app interrupts itself to say nothing happened.
   String? _updateLabel() {
     final u = widget.updater;
     switch (u.stage) {
       case UpdateStage.idle:
+      case UpdateStage.checking:
+      case UpdateStage.upToDate:
+      case UpdateStage.checkFailed:
         return null;
       case UpdateStage.available:
         return 'UPDATE ${u.latest}';
@@ -626,6 +681,30 @@ class _FieldScreenState extends State<FieldScreen>
         return u.handoff ?? 'RESTARTING';
       case UpdateStage.failed:
         return 'UPDATE FAILED';
+    }
+  }
+
+  /// The line under the two update rows in the panel, where every state has
+  /// something to say.
+  String _updateStatus() {
+    final u = widget.updater;
+    switch (u.stage) {
+      case UpdateStage.idle:
+        return u.auto ? 'NOT CHECKED YET' : 'AUTOMATIC IS OFF';
+      case UpdateStage.checking:
+        return 'CHECKING';
+      case UpdateStage.upToDate:
+        return 'UP TO DATE';
+      case UpdateStage.checkFailed:
+        return 'COULD NOT REACH GITHUB';
+      case UpdateStage.available:
+        return '${u.latest} IS AVAILABLE';
+      case UpdateStage.downloading:
+        return 'DOWNLOADING ${(u.progress * 100).round()}%';
+      case UpdateStage.ready:
+        return u.handoff ?? 'RESTARTING';
+      case UpdateStage.failed:
+        return 'DOWNLOAD FAILED';
     }
   }
 

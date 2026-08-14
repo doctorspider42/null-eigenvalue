@@ -33,6 +33,11 @@ const Size kPhone = Size(393, 852); // iPhone 15 in logical pixels
 // still holds when the frame is wider than it is tall.
 const Size kDesktop = Size(1040, 780);
 
+// The panel's callbacks, as top-level no-ops, so the whole UpdatePanel can be
+// const in a still that nobody is going to click.
+void _ignore() {}
+void _ignoreBool(bool _) {}
+
 DroneVis _vis({
   required double level,
   required double centroid,
@@ -144,15 +149,31 @@ void main() {
                     top: 44 * scale,
                     left: 0,
                     right: 0,
-                    child: Text(
-                      'NULL EIGENVALUE',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontSize: 11 * scale,
-                        letterSpacing: 6.5 * scale,
-                        fontWeight: FontWeight.w300,
-                        color: Colors.white.withValues(alpha: 0.34),
-                      ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      crossAxisAlignment: CrossAxisAlignment.baseline,
+                      textBaseline: TextBaseline.alphabetic,
+                      children: <Widget>[
+                        Text(
+                          'NULL EIGENVALUE',
+                          style: TextStyle(
+                            fontSize: 11 * scale,
+                            letterSpacing: 6.5 * scale,
+                            fontWeight: FontWeight.w300,
+                            color: Colors.white.withValues(alpha: 0.34),
+                          ),
+                        ),
+                        if (size != kPhone)
+                          Text(
+                            '  0.1.9',
+                            style: TextStyle(
+                              fontSize: 10 * scale,
+                              letterSpacing: 2.4 * scale,
+                              fontWeight: FontWeight.w300,
+                              color: Colors.white.withValues(alpha: 0.18),
+                            ),
+                          ),
+                      ],
                     ),
                   ),
                 if (hud && !panel)
@@ -170,7 +191,7 @@ void main() {
                     child: Container(
                       color: Colors.black.withValues(alpha: 0.55),
                       child: Center(
-                        child: SleepPanel(
+                        child: SettingsPanel(
                           accent: MoodPalette.all[mood].accent,
                           remaining: const Duration(minutes: 27, seconds: 41),
                           choice: const Duration(minutes: 30),
@@ -178,6 +199,13 @@ void main() {
                           showKeys: true,
                           volume: 0.72,
                           onVolume: (_) {},
+                          updates: const UpdatePanel(
+                            auto: true,
+                            busy: false,
+                            status: 'UP TO DATE',
+                            onAuto: _ignoreBool,
+                            onCheck: _ignore,
+                          ),
                           onPick: (_) {},
                         ),
                       ),

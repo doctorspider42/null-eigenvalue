@@ -7,14 +7,18 @@
 // boundary: the constants Dart and C++ have to agree on, and the colour maths
 // that the whole look rests on.
 
+import 'dart:io';
 import 'dart:ui';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:null_eigenvalue/src/palette.dart';
 import 'package:null_eigenvalue/src/updater.dart';
 import 'package:nulleig/nulleig.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
   test('every mood the engine knows has a palette', () {
     // If these ever disagree, the app indexes past the end of the palette list
     // the first time someone taps the last mood.
@@ -95,6 +99,46 @@ void main() {
       expect(isNewerVersion('0.1.7-rc1', '0.1.6'), isFalse);
       expect(isNewerVersion('0.1.8', ''), isFalse);
     });
+  });
+
+  // The switch, and only the switch. Everything past the guard is an HTTPS
+  // request, and a unit test that reaches GitHub is a unit test that fails
+  // whenever the runner has no network - so what is pinned here is the one
+  // thing that must hold offline: that "off" means the app does not go to the
+  // network on its own, and that it is still off next launch.
+  //
+  // The updater only does anything on a desktop, which is where this suite
+  // runs everywhere except the phone-shaped CI jobs.
+  group('the automatic update check', () {
+    final desktop = Platform.isWindows || Platform.isMacOS || Platform.isLinux;
+
+    test('does nothing while it is switched off', () async {
+      SharedPreferences.setMockInitialValues(<String, Object>{
+        'updateAuto': false,
+      });
+      final updater = Updater(currentVersion: '0.1.0');
+      await updater.load();
+      expect(updater.auto, isFalse);
+
+      // Returns before touching the network, so this is safe with no route to
+      // the internet - and if the guard ever regresses, the stage moves off
+      // idle and this fails.
+      await updater.check();
+      expect(updater.stage, UpdateStage.idle);
+    }, skip: desktop ? null : 'the updater is desktop-only');
+
+    test('is on unless it has been turned off, and stays off', () async {
+      SharedPreferences.setMockInitialValues(<String, Object>{});
+      final first = Updater(currentVersion: '0.1.0');
+      await first.load();
+      expect(first.auto, isTrue, reason: 'the default is to look');
+
+      await first.setAuto(false);
+
+      final next = Updater(currentVersion: '0.1.0');
+      await next.load();
+      expect(next.auto, isFalse, reason: 'the switch outlives the launch');
+    }, skip: desktop ? null : 'the updater is desktop-only');
   });
 }
 
