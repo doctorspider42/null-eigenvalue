@@ -37,6 +37,14 @@ constexpr int kDefaultRate = 48000;
 
 struct Holder {
     ne::Engine engine;
+    // Every step of opening the device records its result, because on a
+    // sideloaded build there is no console and "no sound" has to be
+    // diagnosable from inside the app.
+    std::atomic<int> r_context{-999};
+    std::atomic<int> r_device_init{-999};
+    std::atomic<int> r_device_start{-999};
+    std::atomic<int> started{0};
+    std::atomic<unsigned int> callbacks{0};
 #ifdef NE_WITH_MINIAUDIO
     ma_context context{};
     ma_device device{};
@@ -54,6 +62,7 @@ void data_callback(ma_device* dev, void* out, const void* in, ma_uint32 frames) 
     (void)in;
     Holder* h = (Holder*)dev->pUserData;
     if (h == nullptr) return;
+    h->callbacks.fetch_add(1, std::memory_order_relaxed);
     h->engine.render((float*)out, (int)frames);
 }
 
@@ -67,7 +76,11 @@ void watchdog_main(Holder* h) {
         std::this_thread::sleep_for(std::chrono::milliseconds(400));
         if (!h->want_running.load(std::memory_order_relaxed)) continue;
         if (!h->device_ok) continue;
-        if (ma_device_get_state(&h->device) != ma_device_state_started) {
+        // Only from `stopped`, not from "anything that is not started".
+        // `starting` and `stopping` are transient states the backend passes
+        // through on its own, and restarting a device that is mid-start turns
+        // a working device into a permanent stutter.
+        if (ma_device_get_state(&h->device) == ma_device_state_stopped) {
             ma_device_start(&h->device);  // fails harmlessly during a call
         }
     }
@@ -109,9 +122,14 @@ NE_API int ne_start(ne_engine* e) {
     if (!h->context_ok) {
         ma_context_config cfg = ma_context_config_init();
         // Playback, not ambient: this is the app's reason to be running, it
-        // should interrupt whatever was playing, and - the part that actually
-        // matters - only the playback category keeps the process alive with
-        // the screen off.
+        // should interrupt whatever was playing, it must ignore the ringer
+        // switch, and - the part that actually matters - only the playback
+        // category keeps the process alive with the screen off.
+        //
+        // The AppDelegate sets the same category and activates the session
+        // before Flutter starts, so this is a second, agreeing voice rather
+        // than a competing one. Both saying "playback" means the order they
+        // run in cannot change the answer.
         cfg.coreaudio.sessionCategory = ma_ios_session_category_playback;
         cfg.coreaudio.sessionCategoryOptions =
             ma_ios_session_category_option_allow_bluetooth_a2dp |
@@ -119,7 +137,9 @@ NE_API int ne_start(ne_engine* e) {
         // Leave the session active when the device is torn down. Deactivating
         // it is what makes the lock-screen controls disappear.
         cfg.coreaudio.noAudioSessionDeactivate = MA_TRUE;
-        if (ma_context_init(nullptr, 0, &cfg, &h->context) != MA_SUCCESS) return -2;
+        int r = (int)ma_context_init(nullptr, 0, &cfg, &h->context);
+        h->r_context.store(r, std::memory_order_relaxed);
+        if (r != MA_SUCCESS) return -2;
         h->context_ok = true;
     }
 
@@ -135,11 +155,16 @@ NE_API int ne_start(ne_engine* e) {
         // to the sound.
         cfg.periodSizeInMilliseconds = 20;
         cfg.performanceProfile = ma_performance_profile_conservative;
-        if (ma_device_init(&h->context, &cfg, &h->device) != MA_SUCCESS) return -3;
+        int r = (int)ma_device_init(&h->context, &cfg, &h->device);
+        h->r_device_init.store(r, std::memory_order_relaxed);
+        if (r != MA_SUCCESS) return -3;
         h->device_ok = true;
     }
 
-    if (ma_device_start(&h->device) != MA_SUCCESS) return -4;
+    int rs = (int)ma_device_start(&h->device);
+    h->r_device_start.store(rs, std::memory_order_relaxed);
+    if (rs != MA_SUCCESS) return -4;
+    h->started.store(1, std::memory_order_relaxed);
     h->want_running.store(true, std::memory_order_relaxed);
     if (!h->watchdog.joinable()) {
         h->watchdog_quit.store(false, std::memory_order_relaxed);
@@ -200,6 +225,28 @@ NE_API void ne_set_seed(ne_engine* e, uint32_t seed) {
 }
 NE_API void ne_get_vis(ne_engine* e, ne_vis* out) {
     if (e && out) ((Holder*)e)->engine.get_vis(out);
+}
+
+NE_API void ne_get_status(ne_engine* e, ne_status* out) {
+    if (!out) return;
+    Holder* h = (Holder*)e;
+    if (!h) {
+        *out = ne_status{};
+        return;
+    }
+    out->started = h->started.load(std::memory_order_relaxed);
+    out->ma_context = h->r_context.load(std::memory_order_relaxed);
+    out->ma_device_init = h->r_device_init.load(std::memory_order_relaxed);
+    out->ma_device_start = h->r_device_start.load(std::memory_order_relaxed);
+    out->callbacks = h->callbacks.load(std::memory_order_relaxed);
+    out->elapsed = h->engine.elapsed();
+    out->sample_rate = h->engine.sample_rate();
+#ifdef NE_WITH_MINIAUDIO
+    out->device_state = h->device_ok ? (int)ma_device_get_state(&h->device) : -1;
+    if (h->device_ok) out->sample_rate = (int)h->device.sampleRate;
+#else
+    out->device_state = -1;
+#endif
 }
 NE_API const char* ne_mood_name(int mood) { return ne::mood_at(mood).name; }
 NE_API double ne_elapsed(const ne_engine* e) {

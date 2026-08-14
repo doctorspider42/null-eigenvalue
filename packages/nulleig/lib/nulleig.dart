@@ -43,6 +43,73 @@ final class _NeVis extends Struct {
   external int chordChange;
 }
 
+/// Mirrors `ne_status`.
+final class _NeStatus extends Struct {
+  @Int32()
+  external int started;
+  @Int32()
+  external int maContext;
+  @Int32()
+  external int maDeviceInit;
+  @Int32()
+  external int maDeviceStart;
+  @Int32()
+  external int deviceState;
+  @Int32()
+  external int sampleRate;
+  @Uint32()
+  external int callbacks;
+  @Double()
+  external double elapsed;
+}
+
+/// Why there is no sound.
+///
+/// Silence has several very different causes that look identical from the
+/// outside, and on a sideloaded build there is no console to tell them apart.
+/// [callbacks] is the one that splits the problem in half: still zero and the
+/// OS is not asking us for audio at all, so it is the device or the session;
+/// rising while nothing is heard and the fault is downstream of us.
+class DroneStatus {
+  const DroneStatus({
+    required this.started,
+    required this.maContext,
+    required this.maDeviceInit,
+    required this.maDeviceStart,
+    required this.deviceState,
+    required this.sampleRate,
+    required this.callbacks,
+    required this.elapsed,
+  });
+
+  final bool started;
+  final int maContext;
+  final int maDeviceInit;
+  final int maDeviceStart;
+  final int deviceState;
+  final int sampleRate;
+  final int callbacks;
+  final double elapsed;
+
+  static const unknown = DroneStatus(
+    started: false,
+    maContext: -999,
+    maDeviceInit: -999,
+    maDeviceStart: -999,
+    deviceState: -1,
+    sampleRate: 0,
+    callbacks: 0,
+    elapsed: 0,
+  );
+
+  /// One line, short enough for the bottom of the screen and complete enough
+  /// to act on from a screenshot.
+  String get line => 'dev ${started ? "ok" : "FAIL"}'
+      ' ctx$maContext/init$maDeviceInit/start$maDeviceStart'
+      ' st$deviceState ${sampleRate}Hz'
+      ' cb$callbacks t${elapsed.toStringAsFixed(1)}';
+}
+
 /// A snapshot of what the engine is doing, as plain Dart values.
 class DroneVis {
   const DroneVis({
@@ -110,6 +177,8 @@ typedef _SetSeed = void Function(Pointer<Void>, int);
 typedef _SetSeedC = Void Function(Pointer<Void>, Uint32);
 typedef _GetVis = void Function(Pointer<Void>, Pointer<_NeVis>);
 typedef _GetVisC = Void Function(Pointer<Void>, Pointer<_NeVis>);
+typedef _GetStatus = void Function(Pointer<Void>, Pointer<_NeStatus>);
+typedef _GetStatusC = Void Function(Pointer<Void>, Pointer<_NeStatus>);
 typedef _MoodName = Pointer<Utf8> Function(int);
 typedef _MoodNameC = Pointer<Utf8> Function(Int32);
 typedef _Elapsed = double Function(Pointer<Void>);
@@ -176,6 +245,8 @@ class DroneEngine {
       _lib.lookupFunction<_SetSeedC, _SetSeed>('ne_set_seed');
   late final _getVisFn =
       _lib.lookupFunction<_GetVisC, _GetVis>('ne_get_vis');
+  late final _getStatusFn =
+      _lib.lookupFunction<_GetStatusC, _GetStatus>('ne_get_status');
   late final _moodNameFn =
       _lib.lookupFunction<_MoodNameC, _MoodName>('ne_mood_name');
   late final _elapsedFn =
@@ -183,6 +254,7 @@ class DroneEngine {
 
   // Reused so that polling the visuals sixty times a second allocates nothing.
   final Pointer<_NeVis> _visBuf = calloc<_NeVis>();
+  final Pointer<_NeStatus> _statusBuf = calloc<_NeStatus>();
 
   bool _disposed = false;
 
@@ -248,6 +320,23 @@ class DroneEngine {
     );
   }
 
+  /// Device and callback state. Cheap; safe to poll.
+  DroneStatus status() {
+    if (_disposed) return DroneStatus.unknown;
+    _getStatusFn(_handle, _statusBuf);
+    final s = _statusBuf.ref;
+    return DroneStatus(
+      started: s.started != 0,
+      maContext: s.maContext,
+      maDeviceInit: s.maDeviceInit,
+      maDeviceStart: s.maDeviceStart,
+      deviceState: s.deviceState,
+      sampleRate: s.sampleRate,
+      callbacks: s.callbacks,
+      elapsed: s.elapsed,
+    );
+  }
+
   String moodName(int index) =>
       _moodNameFn(index.clamp(0, neMoodCount - 1)).toDartString();
 
@@ -258,5 +347,6 @@ class DroneEngine {
     _destroy(_handle);
     _handle = nullptr;
     calloc.free(_visBuf);
+    calloc.free(_statusBuf);
   }
 }

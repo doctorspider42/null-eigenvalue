@@ -109,6 +109,33 @@ NE_API void ne_set_gain(ne_engine* e, float gain);
  * which is what makes the thing testable at all. */
 NE_API void ne_set_seed(ne_engine* e, uint32_t seed);
 
+/* ------------------------------------------------------------- diagnostics */
+
+/* Why there is no sound.
+ *
+ * Silence has several very different causes that all look identical from the
+ * outside - a device that never opened, a callback that is never called, a
+ * synthesizer producing zeroes, or an audio session that is routing us
+ * nowhere - and on a sideloaded build there is no console to tell them apart.
+ * So the engine reports enough to distinguish them, and the app shows it.
+ *
+ * Read it like this: `callbacks` still 0 means the OS is not asking us for
+ * audio, so the problem is the device or the session. `callbacks` rising with
+ * `level` at 0 means the synthesizer is idle - check `gate`. Both non-zero and
+ * still silence means the session is playing us into nothing. */
+typedef struct ne_status {
+    int started;            /* 1 once ne_start has succeeded              */
+    int ma_context;         /* ma_result of ma_context_init, 0 = ok       */
+    int ma_device_init;     /* ma_result of ma_device_init                */
+    int ma_device_start;    /* ma_result of ma_device_start               */
+    int device_state;       /* ma_device_get_state, -1 when uninitialised */
+    int sample_rate;        /* what the device actually runs at           */
+    unsigned int callbacks; /* audio callbacks served since ne_start      */
+    double elapsed;         /* seconds of audio rendered                  */
+} ne_status;
+
+NE_API void ne_get_status(ne_engine* e, ne_status* out);
+
 /* ------------------------------------------------------------- introspection */
 
 NE_API void ne_get_vis(ne_engine* e, ne_vis* out);

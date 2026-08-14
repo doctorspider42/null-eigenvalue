@@ -17,6 +17,8 @@ class Hud extends StatelessWidget {
     required this.rootHz,
     required this.onMood,
     required this.onToggle,
+    this.diagnostics,
+    this.onDiagnosticsTap,
   });
 
   final MoodPalette palette;
@@ -25,6 +27,12 @@ class Hud extends StatelessWidget {
   final double rootHz;
   final ValueChanged<int> onMood;
   final VoidCallback onToggle;
+
+  /// Shown under the readout when something is wrong with the audio device,
+  /// or when the reading is asked for by long-pressing the frequency. There is
+  /// no console on a sideloaded build, so this is the console.
+  final String? diagnostics;
+  final VoidCallback? onDiagnosticsTap;
 
   @override
   Widget build(BuildContext context) {
@@ -65,16 +73,39 @@ class Hud extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 12),
-        Text(
-          '${rootHz.toStringAsFixed(1)} Hz',
-          style: TextStyle(
-            fontSize: 10,
-            height: 1.2,
-            letterSpacing: 2.4,
-            fontWeight: FontWeight.w300,
-            color: Colors.white.withValues(alpha: 0.26),
+        GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onLongPress: onDiagnosticsTap,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 4),
+            child: Text(
+              '${rootHz.toStringAsFixed(1)} Hz',
+              style: TextStyle(
+                fontSize: 10,
+                height: 1.2,
+                letterSpacing: 2.4,
+                fontWeight: FontWeight.w300,
+                color: Colors.white.withValues(alpha: 0.26),
+              ),
+            ),
           ),
         ),
+        if (diagnostics != null) ...<Widget>[
+          const SizedBox(height: 8),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 18),
+            child: Text(
+              diagnostics!,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontFamily: 'monospace',
+                fontSize: 9,
+                height: 1.35,
+                color: Colors.white.withValues(alpha: 0.42),
+              ),
+            ),
+          ),
+        ],
       ],
     );
   }

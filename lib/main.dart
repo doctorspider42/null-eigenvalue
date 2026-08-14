@@ -60,11 +60,20 @@ Future<void> main() async {
         androidNotificationOngoing: false,
         androidNotificationIcon: 'mipmap/ic_launcher',
       ),
-    );
+      // Bounded, because starting the device now waits on this. A media
+      // session that never finishes initialising must cost us the lock
+      // screen, not the sound.
+    ).timeout(const Duration(seconds: 8));
   } catch (_) {
     // No media session is a degraded app, not a dead one: it still makes
     // sound, it just cannot be driven from a lock screen.
   }
+
+  // Last, deliberately. AudioService touches the audio session on the way up,
+  // and whichever of the two configures it last decides the category - which
+  // decides whether the ringer switch silences us and whether iOS lets the
+  // app keep running once the screen locks.
+  controller.startAudio();
 
   final textures = await Textures.load();
   runApp(NullEigenvalueApp(controller: controller, textures: textures));

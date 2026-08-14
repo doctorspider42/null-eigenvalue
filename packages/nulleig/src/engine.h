@@ -119,7 +119,9 @@ class Engine {
 
     void get_vis(ne_vis* out) const;
     int sample_rate() const { return sr_i_; }
-    double elapsed() const { return (double)frames_done_ / (double)sr_; }
+    double elapsed() const {
+        return (double)frames_done_.load(std::memory_order_relaxed) / (double)sr_;
+    }
 
  private:
     void control_block();
@@ -232,7 +234,8 @@ class Engine {
     float width_ = 1.0f;
 
     int block_pos_ = kControlBlock;
-    uint64_t frames_done_ = 0;
+    // Written by the audio thread, read by whoever asks for elapsed time.
+    std::atomic<uint64_t> frames_done_{0};
     float sine_[1025];
 };
 

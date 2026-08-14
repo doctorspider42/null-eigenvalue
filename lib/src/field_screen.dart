@@ -3,6 +3,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
+import 'package:nulleig/nulleig.dart';
 
 import 'drone_controller.dart';
 import 'hud.dart';
@@ -32,8 +33,17 @@ class _FieldScreenState extends State<FieldScreen>
   Duration _lastTick = Duration.zero;
   double _idle = 1;
 
-  bool _hudVisible = true;
+  // Hidden at launch. The painter already draws a large breathing ring with a
+  // play glyph in the middle of the field while the app is silent, and the HUD
+  // has a transport of its own - showing both at once put two play buttons on
+  // screen, one of them apparently decorative.
+  bool _hudVisible = false;
+  double _hudAmt = 0;
   Timer? _hudTimer;
+
+  DroneStatus _status = DroneStatus.unknown;
+  double _statusClock = 0;
+  bool _forceDiagnostics = false;
 
   /// Pixels the finger has covered since the last frame, which is where the
   /// excitation the engine hears comes from. Accumulated here rather than
@@ -80,7 +90,16 @@ class _FieldScreenState extends State<FieldScreen>
 
     final wantIdle = c.playing ? 0.0 : 1.0;
     _idle += (wantIdle - _idle) * (1 - math.exp(-dt / 0.45));
-    _state.idleHint = _idle;
+    // The two invitations cross-fade rather than swap, so raising the HUD
+    // while stopped does not make the centre glyph vanish on a frame boundary.
+    _hudAmt += ((_hudVisible ? 1.0 : 0.0) - _hudAmt) * (1 - math.exp(-dt / 0.28));
+    _state.idleHint = _idle * (1 - _hudAmt);
+
+    _statusClock += dt;
+    if (_statusClock > 0.5) {
+      _statusClock = 0;
+      _status = c.status();
+    }
 
     if (_touching) {
       final w = context.size?.width ?? 400;
@@ -238,6 +257,11 @@ class _FieldScreenState extends State<FieldScreen>
                     mood: c.mood,
                     playing: c.playing,
                     rootHz: _state.vis.rootHz,
+                    diagnostics: _diagnostics(c),
+                    onDiagnosticsTap: () {
+                      setState(() => _forceDiagnostics = !_forceDiagnostics);
+                      _restartHudTimer();
+                    },
                     onMood: (m) {
                       c.setMood(m);
                       _restartHudTimer();
@@ -252,24 +276,25 @@ class _FieldScreenState extends State<FieldScreen>
             ),
           ),
 
-          if (!c.deviceOk)
-            Align(
-              alignment: Alignment.center,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 40),
-                child: Text(
-                  'no audio device',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontSize: 11,
-                    letterSpacing: 3,
-                    color: Colors.white.withValues(alpha: 0.5),
-                  ),
-                ),
-              ),
-            ),
         ],
       ),
     );
+  }
+
+  /// The line to show under the readout, or null to show nothing.
+  ///
+  /// It appears on its own when the audio is demonstrably not working, and can
+  /// be summoned by long-pressing the frequency. The three states it has to
+  /// tell apart: a device that never opened, a device that opened but is never
+  /// asked for audio, and a synthesizer that is being asked and is returning
+  /// silence.
+  String? _diagnostics(DroneController c) {
+    if (_forceDiagnostics) return _status.line;
+    if (!c.deviceOk) return _status.line;
+    if (c.playing && _status.callbacks == 0) return _status.line;
+    if (c.playing && _status.elapsed > 5 && _state.vis.level < 0.0005) {
+      return _status.line;
+    }
+    return null;
   }
 }

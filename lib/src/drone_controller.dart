@@ -70,9 +70,21 @@ class DroneController extends ChangeNotifier {
     engine.mood = _mood;
     engine.setField(_x, _y);
     engine.gain = 0.92;
+    notifyListeners();
+  }
+
+  /// Opens the audio device.
+  ///
+  /// Separate from [restore], and called after the media session has been
+  /// initialised, because both want a say in the AVAudioSession and the last
+  /// one to touch it wins. Starting the device last means the category the
+  /// engine asked for is the category that is live.
+  void startAudio() {
     _deviceOk = engine.startDevice();
     notifyListeners();
   }
+
+  DroneStatus status() => engine.status();
 
   void _save() {
     _prefs?.setInt('mood', _mood);

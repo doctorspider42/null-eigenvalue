@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- The same near-black the app opens on, so the launch window and the
+         first frame are the same colour and there is no flash between them.
+         Deliberately not pure black: on an OLED that reads as a hole rather
+         than as a background. -->
+    <color name="field_background">#FF03070C</color>
+</resources>

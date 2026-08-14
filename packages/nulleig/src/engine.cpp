@@ -1,11 +1,11 @@
-#include "engine.h"
+﻿#include "engine.h"
 
 #include <algorithm>
 
 namespace ne {
 namespace {
 
-// Padé approximation of tanh. Used for the drive stage and nothing else;
+// Pade approximation of tanh. Used for the drive stage and nothing else;
 // accuracy is irrelevant, monotonicity and cheapness are not.
 inline float soft(float x) {
     float x2 = x * x;
@@ -620,7 +620,7 @@ void Engine::render(float* out, int frames) {
             peak_ -= peak_ * 0.2f;
             n += todo;
             block_pos_ += todo;
-            frames_done_ += (uint64_t)todo;
+            frames_done_.fetch_add((uint64_t)todo, std::memory_order_relaxed);
             continue;
         }
 
@@ -742,8 +742,9 @@ void Engine::render(float* out, int frames) {
 
         n += todo;
         block_pos_ += todo;
-        frames_done_ += (uint64_t)todo;
+        frames_done_.fetch_add((uint64_t)todo, std::memory_order_relaxed);
     }
 }
 
 }  // namespace ne
+
