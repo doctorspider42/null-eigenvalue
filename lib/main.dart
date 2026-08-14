@@ -107,6 +107,10 @@ Future<void> main() async {
   // and the first sound, and on a phone it does not run at all.
   final updater = Updater();
   if (updater.enabled) {
+    // The switch is read now and the network is touched later. Preferences are
+    // already warm - the controller opened them on the way up - so by the time
+    // the timer fires, check() knows whether it is allowed to run at all.
+    unawaited(updater.load());
     Timer(const Duration(seconds: 6), () => unawaited(updater.check()));
   }
 

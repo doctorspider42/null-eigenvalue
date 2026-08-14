@@ -54,10 +54,16 @@ nothing else. The keyboard reaches everything:
 | `D` | diagnostics |
 | `esc` | leave full screen, or close the panel |
 
-The same list is behind the gear, under the sleep durations — a chromeless app
+The same list is behind the gear, beside the sleep durations — a chromeless app
 that also hides its shortcuts is just a locked door. On a Mac the media keys
 and Now Playing work exactly as the lock screen does on a phone; Windows and
 Linux have no equivalent to talk to.
+
+The gear is where everything the app can be told to do now lives: sleep, level,
+updates and the keys, in two columns on a window wide enough for them. The
+running version sits after the wordmark at the top, at half its weight — an app
+you downloaded has no store page to go and read, so "which one am I running"
+has to be answerable from the app itself.
 
 **Volume** is the desktop's own addition. A phone has a hardware rocker an inch
 from the thumb already holding it; a window is one voice among a dozen other
@@ -121,8 +127,21 @@ clicking it fetches that platform's installer and hands it over. Windows
 installs silently and reopens the app, macOS mounts the disk image, and Linux
 replaces the AppImage in place and asks to be restarted.
 
-A build made on your own machine has no version baked into it and therefore
-never offers anything. Only a build CI cut compares itself to a release.
+Behind the gear, **UPDATES** has the two controls that go with that.
+**AUTOMATIC** turns the unprompted check off; **CHECK NOW** asks anyway,
+ignoring both the switch and the six hours, because a check you asked for out
+loud is not the thing either of them was protecting you from. Underneath is
+what the last one found — up to date, a version on offer, or that GitHub could
+not be reached.
+
+Only that line ever mentions a check that found nothing. The picture is told
+about a newer version existing and about a download going wrong, and about
+nothing else: an app that interrupts itself to say nothing happened is an app
+you stop reading.
+
+A build made on your own machine has no version baked into it, shows `DEV` by
+the wordmark, and never offers anything. Only a build CI cut compares itself to
+a release.
 
 ## How the music works
 
