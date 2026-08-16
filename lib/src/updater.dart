@@ -233,6 +233,10 @@ class Updater extends ChangeNotifier {
     _busy = true;
     stage = UpdateStage.downloading;
     progress = 0;
+    // Cleared, because the UI falls back to it when an install fails and only
+    // the success paths ever set it: a second attempt that went wrong would
+    // otherwise be reported with the previous attempt's hand-off text.
+    handoff = null;
     notifyListeners();
 
     try {
