@@ -125,6 +125,22 @@ jobs:
             unzip -l "$APK" | grep 'lib/' || true
             exit 1
           fi
+
+          # The same APK is the television build, and one manifest entry is
+          # what makes it one. Without LEANBACK_LAUNCHER a set installs it and
+          # then offers no way to start it - invisible from everywhere except a
+          # television, so it is checked here beside the other thing that
+          # breaks without saying so.
+          AAPT=$(ls "$ANDROID_HOME"/build-tools/*/aapt2 | sort -V | tail -1)
+          "$AAPT" dump badging "$APK" > badging.txt
+          if ! grep -q 'leanback-launchable-activity' badging.txt; then
+            echo "::error::no LEANBACK_LAUNCHER - a television would install \
+          this and then have no way to start it"
+            grep -i 'launchable\|uses-feature' badging.txt || true
+            exit 1
+          fi
+          grep -i 'launchable\|uses-feature' badging.txt || true
+
           ls -lh "$APK"
           # A fixed asset name, with the version in the release title. It is
           # what makes /releases/latest/download/<name> a stable URL, which is

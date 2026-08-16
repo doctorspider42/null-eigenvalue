@@ -4,6 +4,48 @@ import 'package:flutter/material.dart';
 import 'package:nulleig/nulleig.dart';
 
 import 'palette.dart';
+import 'tv_focus.dart';
+
+/// The ring that says "this is the thing the remote is pointing at".
+///
+/// A hairline in the accent colour, at the weight the panel's divider and the
+/// level's rule already use. Not a Material focus highlight: one of those in
+/// the middle of this picture looks like it was pasted in from another program,
+/// which is the same reason the transport and the gear are drawn rather than
+/// iconed.
+///
+/// The border is always laid out and only its alpha moves, so a control does
+/// not shift by a pixel when the cursor arrives at it.
+class FocusRing extends StatelessWidget {
+  const FocusRing({
+    super.key,
+    required this.on,
+    required this.colour,
+    required this.child,
+    this.radius = 6,
+  });
+
+  final bool on;
+  final Color colour;
+  final Widget child;
+  final double radius;
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 180),
+      curve: Curves.easeOut,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(radius),
+        border: Border.all(
+          width: 1,
+          color: colour.withValues(alpha: on ? 0.55 : 0),
+        ),
+      ),
+      child: child,
+    );
+  }
+}
 
 /// The only chrome in the app: a transport and five names. It is hidden by
 /// default and fades back out on its own, because a control that is always on
@@ -18,6 +60,7 @@ class Hud extends StatelessWidget {
     required this.onMood,
     required this.onToggle,
     this.scale = 1,
+    this.focus,
     this.sleepLabel,
     this.updateLabel,
     this.onUpdateTap,
@@ -32,6 +75,12 @@ class Hud extends StatelessWidget {
   final double rootHz;
   final ValueChanged<int> onMood;
   final VoidCallback onToggle;
+
+  /// Where the remote is pointing, or null anywhere there is no remote - which
+  /// is everywhere but a television. It rings one control at a time and is
+  /// deliberately separate from [mood]: the ring says "this is what the button
+  /// would do", the filled dot says "this is what is playing".
+  final TvFocus? focus;
 
   /// How much bigger than the phone this is being drawn. One number for the
   /// whole HUD: the proportions are the design, and a window is a bigger sheet
@@ -74,6 +123,7 @@ class Hud extends StatelessWidget {
           playing: playing,
           colour: palette.accent,
           scale: scale,
+          focused: focus?.control == TvControl.transport,
           onTap: onToggle,
         ),
         SizedBox(height: 26 * scale),
@@ -90,6 +140,7 @@ class Hud extends StatelessWidget {
                 selected: i == mood,
                 colour: palette.accent,
                 scale: scale,
+                focused: focus?.ringsMood(i) ?? false,
                 onTap: () => onMood(i),
               ),
           ],
@@ -217,21 +268,27 @@ class GearButton extends StatelessWidget {
     required this.colour,
     required this.onTap,
     this.scale = 1,
+    this.focused = false,
   });
 
   final Color colour;
   final VoidCallback onTap;
   final double scale;
+  final bool focused;
 
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: onTap,
-      child: SizedBox(
-        width: 44 * scale,
-        height: 44 * scale,
-        child: CustomPaint(painter: _GearPainter(colour)),
+      child: FocusRing(
+        on: focused,
+        colour: colour,
+        child: SizedBox(
+          width: 44 * scale,
+          height: 44 * scale,
+          child: CustomPaint(painter: _GearPainter(colour)),
+        ),
       ),
     );
   }
@@ -284,12 +341,14 @@ class _MoodDot extends StatelessWidget {
     required this.colour,
     required this.onTap,
     this.scale = 1,
+    this.focused = false,
   });
 
   final bool selected;
   final Color colour;
   final VoidCallback onTap;
   final double scale;
+  final bool focused;
 
   @override
   Widget build(BuildContext context) {
@@ -298,18 +357,25 @@ class _MoodDot extends StatelessWidget {
       onTap: onTap,
       // A 5-pixel dot inside a 44-pixel target: the thing you aim at is the
       // size a thumb needs, the thing you see is the size the picture needs.
-      child: SizedBox(
-        width: 44 * scale,
-        height: 34 * scale,
-        child: Center(
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 320),
-            curve: Curves.easeOut,
-            width: (selected ? 7 : 4) * scale,
-            height: (selected ? 7 : 4) * scale,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: selected ? colour : Colors.white.withValues(alpha: 0.26),
+      // On a television the ring goes round the target rather than the dot -
+      // the dot is four pixels, and a ring round it would be a smudge.
+      child: FocusRing(
+        on: focused,
+        colour: colour,
+        child: SizedBox(
+          width: 44 * scale,
+          height: 34 * scale,
+          child: Center(
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 320),
+              curve: Curves.easeOut,
+              width: (selected ? 7 : 4) * scale,
+              height: (selected ? 7 : 4) * scale,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color:
+                    selected ? colour : Colors.white.withValues(alpha: 0.26),
+              ),
             ),
           ),
         ),
@@ -324,27 +390,36 @@ class _Transport extends StatelessWidget {
     required this.colour,
     required this.onTap,
     this.scale = 1,
+    this.focused = false,
   });
 
   final bool playing;
   final Color colour;
   final VoidCallback onTap;
   final double scale;
+  final bool focused;
 
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: onTap,
-      child: SizedBox(
-        width: 92 * scale,
-        height: 92 * scale,
-        child: TweenAnimationBuilder<double>(
-          tween: Tween<double>(begin: 0, end: playing ? 1 : 0),
-          duration: const Duration(milliseconds: 420),
-          curve: Curves.easeOutCubic,
-          builder: (context, t, child) => CustomPaint(
-            painter: _TransportPainter(t, colour),
+      // Radius half the side, so the ring round the transport is a circle
+      // concentric with the one the painter draws rather than a box round it.
+      child: FocusRing(
+        on: focused,
+        colour: colour,
+        radius: 46 * scale,
+        child: SizedBox(
+          width: 92 * scale,
+          height: 92 * scale,
+          child: TweenAnimationBuilder<double>(
+            tween: Tween<double>(begin: 0, end: playing ? 1 : 0),
+            duration: const Duration(milliseconds: 420),
+            curve: Curves.easeOutCubic,
+            builder: (context, t, child) => CustomPaint(
+              painter: _TransportPainter(t, colour),
+            ),
           ),
         ),
       ),
@@ -444,9 +519,14 @@ class SettingsPanel extends StatelessWidget {
     required this.onPick,
     this.scale = 1,
     this.showKeys = false,
+    this.tv = false,
+    this.focusColumn = tvSleepColumn,
+    this.focusRow = 0,
     this.volume,
     this.onVolume,
     this.updates,
+    this.diagnosticsOn = false,
+    this.onDiagnostics,
   });
 
   final Color accent;
@@ -460,6 +540,52 @@ class SettingsPanel extends StatelessWidget {
   /// section big enough to want one.
   final bool showKeys;
 
+  /// Whether to lay this out for a remote rather than for a pointer.
+  ///
+  /// Not merely a legend swap. At the size a television needs, the single
+  /// column runs off the bottom of a 540-pixel-tall logical screen, so this
+  /// becomes three: the sleep durations, then the settings beside them, then
+  /// the legend. Nothing scrolls, which matters more here than anywhere else -
+  /// a D-pad cannot scroll towards a row it cannot see.
+  final bool tv;
+
+  /// Where the remote is sitting: which column, and which row inside it. Both
+  /// are ignored entirely unless [tv]. See [tvRowsIn].
+  final int focusColumn;
+  final int focusRow;
+
+  /// The durations, in the order they are drawn. Public because the remote's
+  /// key handler has to turn a row number back into one of these, and a second
+  /// copy of the list somewhere else is a second copy to forget to update.
+  static const List<int> minutes = <int>[15, 30, 45, 60, 90];
+
+  /// The two columns a remote can walk, in the order they are drawn.
+  ///
+  /// The cursor is a column and a row rather than one running number. It was
+  /// one number to begin with, which meant walking all six sleep durations to
+  /// reach the level sitting beside them - the eye saw two columns and the
+  /// D-pad treated them as one list. The legend is a third column and is not
+  /// here: there is nothing in it to press.
+  static const int tvSleepColumn = 0;
+  static const int tvSettingsColumn = 1;
+
+  /// Rows within [tvSettingsColumn]. The level first, because it is the one
+  /// most likely to be wanted twice in an evening.
+  static const int tvVolumeRow = 0;
+
+  /// The diagnostics switch. It is only a row on a television: everywhere else
+  /// the reading is summoned by long-pressing the frequency or by pressing D,
+  /// and a remote can do neither. Leaving it unreachable would make the TV the
+  /// one build that cannot be asked why it is silent - on the platform with the
+  /// least chance of anyone having a console open.
+  static const int tvDiagnosticsRow = 1;
+
+  /// How many rows [column] has. Counting and drawing must agree: walking onto
+  /// a row that is not drawn makes the ring vanish, which is not a failure
+  /// anyone would think to report. A test holds the two together.
+  static int tvRowsIn(int column) =>
+      column == tvSleepColumn ? 1 + minutes.length : tvDiagnosticsRow + 1;
+
   /// The master level, 0..1, or null to leave the section out entirely - which
   /// is what a phone does, having a hardware volume control six inches from
   /// the user's thumb.
@@ -471,7 +597,25 @@ class SettingsPanel extends StatelessWidget {
   /// release, so an "up to date" would be a guess.
   final UpdatePanel? updates;
 
-  static const List<int> _minutes = <int>[15, 30, 45, 60, 90];
+  /// Whether the diagnostics reading is currently being forced on, and how to
+  /// flip it. Drawn only when [tv]; see [tvDiagnosticsRow].
+  final bool diagnosticsOn;
+  final VoidCallback? onDiagnostics;
+
+  /// What the D-pad does, which depends on whether the chrome is up - hence two
+  /// short lists rather than one, each under its own heading. Every remote has
+  /// these three buttons; the ones that also have a transport key get it from
+  /// the media session and do not need telling.
+  static const List<List<String>> _remotePicture = <List<String>>[
+    <String>['D-PAD', 'THE FIELD'],
+    <String>['OK', 'THE HUD'],
+  ];
+
+  static const List<List<String>> _remoteChrome = <List<String>>[
+    <String>['D-PAD', 'CHOOSE'],
+    <String>['OK', 'USE'],
+    <String>['BACK', 'AWAY'],
+  ];
 
   static const List<List<String>> _keys = <List<String>>[
     <String>['SPACE', 'PLAY / PAUSE'],
@@ -486,6 +630,49 @@ class SettingsPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // A television is the one place the single column does not fit: at the size
+    // three metres needs, the durations alone are most of the screen's height.
+    // Three columns rather than two, because with the settings and both halves
+    // of the legend stacked together the right-hand one ran to the bottom edge
+    // of the screen - and it is the column the eye reads last, so it was the
+    // one that could least afford to.
+    if (tv) {
+      // Scaled down rather than scrolled if it somehow still does not fit. The
+      // set of televisions is wider than the two shapes this was measured
+      // against, and a panel that is slightly too small to be ideal beats one
+      // with an overflow stripe across it that a D-pad cannot scroll away.
+      return FittedBox(
+        fit: BoxFit.scaleDown,
+        child: _columns(<Widget>[
+          Column(mainAxisSize: MainAxisSize.min, children: _sleepSection()),
+          Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              if (volume != null) ..._volumeSection(),
+              SizedBox(height: 20 * scale),
+              _row(
+                'DIAGNOSTICS',
+                selected: diagnosticsOn,
+                col: tvSettingsColumn,
+                row: tvDiagnosticsRow,
+                onTap: onDiagnostics ?? () {},
+              ),
+            ],
+          ),
+          Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              ..._legendSection('PICTURE', _remotePicture),
+              SizedBox(height: 26 * scale),
+              ..._legendSection('CHROME', _remoteChrome),
+            ],
+          ),
+        ]),
+      );
+    }
+
     final settings = Column(
       mainAxisSize: MainAxisSize.min,
       children: <Widget>[
@@ -502,21 +689,27 @@ class SettingsPanel extends StatelessWidget {
     // be.
     return SingleChildScrollView(
       child: showKeys
-          ? Row(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                settings,
-                SizedBox(width: 56 * scale),
-                Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: _keysSection(),
-                ),
-              ],
-            )
+          ? _columns(<Widget>[
+              settings,
+              Column(
+                mainAxisSize: MainAxisSize.min,
+                children: _legendSection('KEYS', _keys),
+              ),
+            ])
           : settings,
     );
   }
+
+  Widget _columns(List<Widget> columns) => Row(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          for (var i = 0; i < columns.length; i++) ...<Widget>[
+            if (i > 0) SizedBox(width: 56 * scale),
+            columns[i],
+          ],
+        ],
+      );
 
   Widget _divider() => Padding(
         padding: EdgeInsets.symmetric(vertical: 24 * scale),
@@ -569,12 +762,18 @@ class SettingsPanel extends StatelessWidget {
         ),
       ),
       SizedBox(height: 26 * scale),
-      _row('OFF', selected: !armed, onTap: () => onPick(null)),
-      for (final m in _minutes)
+      _row('OFF',
+          selected: !armed,
+          col: tvSleepColumn,
+          row: 0,
+          onTap: () => onPick(null)),
+      for (var i = 0; i < minutes.length; i++)
         _row(
-          '$m MIN',
-          selected: armed && choice?.inMinutes == m,
-          onTap: () => onPick(Duration(minutes: m)),
+          '${minutes[i]} MIN',
+          selected: armed && choice?.inMinutes == minutes[i],
+          col: tvSleepColumn,
+          row: i + 1,
+          onTap: () => onPick(Duration(minutes: minutes[i])),
         ),
     ];
   }
@@ -582,11 +781,17 @@ class SettingsPanel extends StatelessWidget {
   List<Widget> _volumeSection() => <Widget>[
         _heading('VOLUME ${(volume! * 100).round()}%'),
         SizedBox(height: 16 * scale),
-        _VolumeBar(
-          value: volume!,
-          accent: accent,
-          scale: scale,
-          onChanged: onVolume ?? (_) {},
+        FocusRing(
+          on: tv &&
+              focusColumn == tvSettingsColumn &&
+              focusRow == tvVolumeRow,
+          colour: accent,
+          child: _VolumeBar(
+            value: volume!,
+            accent: accent,
+            scale: scale,
+            onChanged: onVolume ?? (_) {},
+          ),
         ),
       ];
 
@@ -610,10 +815,11 @@ class SettingsPanel extends StatelessWidget {
         _note(updates!.status),
       ];
 
-  List<Widget> _keysSection() => <Widget>[
-        _heading('KEYS'),
+  List<Widget> _legendSection(String heading, List<List<String>> rows) =>
+      <Widget>[
+        _heading(heading),
         SizedBox(height: 22 * scale),
-        for (final k in _keys)
+        for (final k in rows)
           Padding(
             padding: EdgeInsets.symmetric(vertical: 3.5 * scale),
             child: Row(
@@ -652,25 +858,37 @@ class SettingsPanel extends StatelessWidget {
           ),
       ];
 
-  Widget _row(String label, {required bool selected, required VoidCallback onTap}) {
+  /// One row of the panel. [row] is its number for a remote to land on; the
+  /// sections a remote cannot reach leave it out and are never ringed.
+  Widget _row(
+    String label, {
+    required bool selected,
+    required VoidCallback onTap,
+    int row = -1,
+    int col = -1,
+  }) {
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: onTap,
-      child: Padding(
-        padding: EdgeInsets.symmetric(
-          horizontal: 48 * scale,
-          vertical: 11 * scale,
-        ),
-        child: Text(
-          label,
-          style: TextStyle(
-            fontSize: 12 * scale,
-            height: 1.0,
-            letterSpacing: 4.6 * scale,
-            fontWeight: FontWeight.w400,
-            color: selected
-                ? accent.withValues(alpha: 0.92)
-                : Colors.white.withValues(alpha: 0.32),
+      child: FocusRing(
+        on: tv && row == focusRow && col == focusColumn,
+        colour: accent,
+        child: Padding(
+          padding: EdgeInsets.symmetric(
+            horizontal: 48 * scale,
+            vertical: 11 * scale,
+          ),
+          child: Text(
+            label,
+            style: TextStyle(
+              fontSize: 12 * scale,
+              height: 1.0,
+              letterSpacing: 4.6 * scale,
+              fontWeight: FontWeight.w400,
+              color: selected
+                  ? accent.withValues(alpha: 0.92)
+                  : Colors.white.withValues(alpha: 0.32),
+            ),
           ),
         ),
       ),

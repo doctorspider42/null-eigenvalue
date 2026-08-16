@@ -22,6 +22,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:null_eigenvalue/src/hud.dart';
 import 'package:null_eigenvalue/src/nebula.dart';
 import 'package:null_eigenvalue/src/palette.dart';
+import 'package:null_eigenvalue/src/platform.dart';
 import 'package:null_eigenvalue/src/textures.dart';
 import 'package:nulleig/nulleig.dart';
 
@@ -32,6 +33,11 @@ const Size kPhone = Size(393, 852); // iPhone 15 in logical pixels
 // cannot tell you: whether a composition designed for a tall narrow frame
 // still holds when the frame is wider than it is tall.
 const Size kDesktop = Size(1040, 780);
+
+/// What a 4K television actually reports: 960x540 logical at devicePixelRatio
+/// 2. Measured on a set rather than assumed, after a first guess that was wrong
+/// by half and put the chrome through the wordmark.
+const Size kTv = Size(960, 540);
 
 // The panel's callbacks, as top-level no-ops, so the whole UpdatePanel can be
 // const in a still that nobody is going to click.
@@ -81,11 +87,19 @@ void main() {
     String? updateLabel,
     String? volumeLabel,
     bool panel = false,
+    bool tv = false,
+    int focusColumn = SettingsPanel.tvSleepColumn,
+    int focusRow = 0,
   }) async {
     // The HUD's own rule, repeated rather than imported: field_screen computes
     // it from MediaQuery, and this harness has no MediaQuery worth the name.
-    final scale =
-        size == kPhone ? 1.0 : (size.shortestSide / 620).clamp(1.0, 1.5).toDouble();
+    // The television's is imported, because that one is a tested function and a
+    // second copy of it here is a second copy to get wrong.
+    final scale = tv
+        ? tvChromeScale(size.shortestSide)
+        : size == kPhone
+            ? 1.0
+            : (size.shortestSide / 620).clamp(1.0, 1.5).toDouble();
 
     tester.view.physicalSize = size * 3.0;
     tester.view.devicePixelRatio = 3.0;
@@ -190,23 +204,37 @@ void main() {
                   Positioned.fill(
                     child: Container(
                       color: Colors.black.withValues(alpha: 0.55),
-                      child: Center(
-                        child: SettingsPanel(
-                          accent: MoodPalette.all[mood].accent,
-                          remaining: const Duration(minutes: 27, seconds: 41),
-                          choice: const Duration(minutes: 30),
-                          scale: scale,
-                          showKeys: true,
-                          volume: 0.72,
-                          onVolume: (_) {},
-                          updates: const UpdatePanel(
-                            auto: true,
-                            busy: false,
-                            status: 'UP TO DATE',
-                            onAuto: _ignoreBool,
-                            onCheck: _ignore,
+                      // The same overscan inset field_screen applies, because
+                      // whether the panel clears the edges of a set is most of
+                      // what this shot is for.
+                      child: Padding(
+                        padding: tv
+                            ? EdgeInsets.symmetric(
+                                horizontal: size.width * 0.04,
+                                vertical: size.height * 0.04,
+                              )
+                            : EdgeInsets.zero,
+                        child: Center(
+                          child: SettingsPanel(
+                            accent: MoodPalette.all[mood].accent,
+                            remaining: const Duration(minutes: 27, seconds: 41),
+                            choice: const Duration(minutes: 30),
+                            scale: scale,
+                            showKeys: !tv,
+                            tv: tv,
+                            focusColumn: focusColumn,
+                            focusRow: focusRow,
+                            volume: 0.72,
+                            onVolume: (_) {},
+                            updates: const UpdatePanel(
+                              auto: true,
+                              busy: false,
+                              status: 'UP TO DATE',
+                              onAuto: _ignoreBool,
+                              onCheck: _ignore,
+                            ),
+                            onPick: (_) {},
                           ),
-                          onPick: (_) {},
                         ),
                       ),
                     ),
@@ -381,6 +409,55 @@ void main() {
         centroid: 0.55,
         bands: <double>[0.44, 0.58, 0.62, 0.34, 0.52, 0.24, 0.28, 0.10],
         rootHz: 49.0,
+      ),
+    );
+  });
+
+  // ---------------------------------------------------------- the television
+  // The shape nothing else in this harness has: 960x540, which is wider and a
+  // third shorter than the phone the HUD was drawn for. Both of the things
+  // being judged here are about height - whether the chrome clears the
+  // wordmark with the diagnostics up, and whether the panel's three columns
+  // clear the bottom edge - and neither is visible on any other size.
+
+  testWidgets('television, the panel behind the gear', (tester) async {
+    await shot(
+      tester,
+      '11-tv-panel',
+      mood: 1,
+      hud: true,
+      panel: true,
+      tv: true,
+      size: kTv,
+      // Sitting on the level, which is where one press of Right from the
+      // durations lands: the arrangement the old single-column cursor could
+      // only reach by walking every sleep row.
+      focusColumn: SettingsPanel.tvSettingsColumn,
+      focusRow: SettingsPanel.tvVolumeRow,
+      centre: const Offset(0.5, 0.55),
+      vis: _vis(
+        level: 0.42,
+        centroid: 0.52,
+        bands: <double>[0.55, 0.72, 0.40, 0.61, 0.28, 0.44, 0.14, 0.06],
+      ),
+    );
+  });
+
+  testWidgets('television, the chrome up', (tester) async {
+    await shot(
+      tester,
+      '12-tv-hud',
+      mood: 2,
+      hud: true,
+      tv: true,
+      size: kTv,
+      updateLabel: 'UPDATE 0.1.42',
+      centre: const Offset(0.72, 0.34),
+      vis: _vis(
+        level: 0.47,
+        centroid: 0.78,
+        bands: <double>[0.20, 0.30, 0.48, 0.64, 0.74, 0.66, 0.50, 0.30],
+        rootHz: 61.7,
       ),
     );
   });

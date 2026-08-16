@@ -12,6 +12,7 @@ import 'hud.dart';
 import 'nebula.dart';
 import 'platform.dart';
 import 'textures.dart';
+import 'tv_focus.dart';
 import 'updater.dart';
 
 /// The app. There is one screen and it is the instrument.
@@ -74,6 +75,19 @@ class _FieldScreenState extends State<FieldScreen>
   /// Desktop only. Whether the window is filling the screen, mirrored here so
   /// that Escape knows whether it has something to leave.
   bool _fullscreen = false;
+
+  /// The scale the last build laid the chrome out at, kept only so the
+  /// diagnostics can report it. On a television it is derived from a screen
+  /// size nobody can see from here, which makes it worth printing.
+  double _uiScale = 1;
+
+  /// Television only. Where the remote is pointing while the chrome is up, and
+  /// which row of the panel is lit while the panel is open. Both are dead
+  /// weight everywhere else - a pointer aims at what it is over, and a keyboard
+  /// has a key per control.
+  TvFocus _focus = const TvFocus();
+  int _panelCol = SettingsPanel.tvSleepColumn;
+  int _panelRow = 0;
 
   /// Whether the level readout is currently showing. It appears when the
   /// volume moves and takes itself away again, so the resting HUD is the same
@@ -242,7 +256,10 @@ class _FieldScreenState extends State<FieldScreen>
 
   void _restartHudTimer() {
     _hudTimer?.cancel();
-    _hudTimer = Timer(const Duration(seconds: 4), () {
+    // Longer on a television, where the chrome is also the cursor: four seconds
+    // is a fair timeout for something you stopped pointing at and a mean one
+    // for something you are still walking a D-pad across.
+    _hudTimer = Timer(Duration(seconds: isTv ? 8 : 4), () {
       if (mounted && widget.controller.playing) {
         setState(() => _hudVisible = false);
       }
@@ -326,14 +343,8 @@ class _FieldScreenState extends State<FieldScreen>
     }
 
     // The arrows are the field itself, not a menu: the same two axes the
-    // pointer drags through, in steps small enough that holding a key reads as
-    // a slow sweep rather than as a jump.
-    const step = 0.035;
-    Offset? nudge;
-    if (key == LogicalKeyboardKey.arrowLeft) nudge = const Offset(-step, 0);
-    if (key == LogicalKeyboardKey.arrowRight) nudge = const Offset(step, 0);
-    if (key == LogicalKeyboardKey.arrowUp) nudge = const Offset(0, -step);
-    if (key == LogicalKeyboardKey.arrowDown) nudge = const Offset(0, step);
+    // pointer drags through.
+    final nudge = _arrowOffset(key);
     if (nudge != null) {
       _nudgeField(nudge);
       return KeyEventResult.handled;
@@ -355,6 +366,181 @@ class _FieldScreenState extends State<FieldScreen>
       1 - _state.target.dy,
       touching: false,
     );
+  }
+
+  // ----------------------------------------------------------------- remote
+
+  /// The remote, which is a television's entire vocabulary: four directions, a
+  /// button in the middle of them, and Back.
+  ///
+  /// The four directions mean two different things, and which one depends on
+  /// what is on screen. With the picture bare they are the field itself - the
+  /// same two axes a finger drags through, and most of the reason this is worth
+  /// putting on a television at all. Once the chrome is up they are the chrome,
+  /// because a remote has nothing else to move a cursor with, and the field
+  /// would otherwise be moving invisibly under a menu the user is reading.
+  ///
+  /// Back is not here. Android delivers it as a route pop rather than reliably
+  /// as a key, so it is the `PopScope` in [build].
+  ///
+  /// Play/pause is not here either: `audio_service` owns the media session, and
+  /// a remote's transport key already arrives through it. Handling the key as
+  /// well would toggle twice on the remotes that have one.
+  KeyEventResult _onTvKey(KeyEvent event) {
+    if (event is KeyUpEvent) return KeyEventResult.ignored;
+    final key = event.logicalKey;
+
+    // A D-pad centre arrives as `select`; the rest are what the various boxes
+    // and their air-mouse remotes send instead of it.
+    final pressed = key == LogicalKeyboardKey.select ||
+        key == LogicalKeyboardKey.enter ||
+        key == LogicalKeyboardKey.numpadEnter ||
+        key == LogicalKeyboardKey.space ||
+        key == LogicalKeyboardKey.gameButtonA;
+
+    if (_sleepVisible) return _onPanelKey(key, pressed);
+    if (_hudVisible) return _onChromeKey(key, pressed);
+
+    // The bare picture. The D-pad is the instrument.
+    if (pressed) {
+      _onTap();
+      return KeyEventResult.handled;
+    }
+    final nudge = _arrowOffset(key);
+    if (nudge != null) {
+      _nudgeField(nudge);
+      return KeyEventResult.handled;
+    }
+    return KeyEventResult.ignored;
+  }
+
+  KeyEventResult _onChromeKey(LogicalKeyboardKey key, bool pressed) {
+    if (pressed) {
+      _activateFocus();
+      return KeyEventResult.handled;
+    }
+
+    if (key == LogicalKeyboardKey.arrowUp ||
+        key == LogicalKeyboardKey.arrowDown) {
+      final order = TvControl.values;
+      final i = (order.indexOf(_focus.control) +
+              (key == LogicalKeyboardKey.arrowUp ? -1 : 1))
+          .clamp(0, order.length - 1);
+      setState(() => _focus = _focus.withControl(order[i]));
+      _restartHudTimer();
+      return KeyEventResult.handled;
+    }
+
+    if (key == LogicalKeyboardKey.arrowLeft ||
+        key == LogicalKeyboardKey.arrowRight) {
+      final dir = key == LogicalKeyboardKey.arrowLeft ? -1 : 1;
+      if (_focus.control == TvControl.mood) {
+        setState(() => _focus =
+            _focus.withMood((_focus.mood + dir).clamp(0, neMoodCount - 1)));
+        _restartHudTimer();
+      } else {
+        // Nothing to walk sideways through on the other two rows, and a
+        // television is the one place with no volume control of its own within
+        // reach of the app - the set's own buttons move the set, not this.
+        _changeVolume(dir * 0.04);
+      }
+      return KeyEventResult.handled;
+    }
+
+    return KeyEventResult.ignored;
+  }
+
+  KeyEventResult _onPanelKey(LogicalKeyboardKey key, bool pressed) {
+    if (key == LogicalKeyboardKey.arrowUp ||
+        key == LogicalKeyboardKey.arrowDown) {
+      final dir = key == LogicalKeyboardKey.arrowUp ? -1 : 1;
+      final last = SettingsPanel.tvRowsIn(_panelCol) - 1;
+      setState(() => _panelRow = (_panelRow + dir).clamp(0, last));
+      return KeyEventResult.handled;
+    }
+
+    if (key == LogicalKeyboardKey.arrowLeft ||
+        key == LogicalKeyboardKey.arrowRight) {
+      final left = key == LogicalKeyboardKey.arrowLeft;
+
+      // The level is the one row that wants the sideways keys for itself. A
+      // slider that could not be moved with left and right would be the only
+      // control on the panel that does not do what it looks like it does; the
+      // way back to the durations is up or down first, which is one press and
+      // is where the eye is going anyway.
+      if (_panelCol == SettingsPanel.tvSettingsColumn &&
+          _panelRow == SettingsPanel.tvVolumeRow) {
+        _changeVolume(left ? -0.04 : 0.04);
+        return KeyEventResult.handled;
+      }
+
+      // Between the two columns. The row is carried across and clamped rather
+      // than reset, so coming back lands near where it left instead of at the
+      // top - the columns are different lengths and a reset would make the
+      // shorter one feel like it swallowed the cursor.
+      final want = left
+          ? SettingsPanel.tvSleepColumn
+          : SettingsPanel.tvSettingsColumn;
+      if (want != _panelCol) {
+        final last = SettingsPanel.tvRowsIn(want) - 1;
+        setState(() {
+          _panelCol = want;
+          _panelRow = _panelRow.clamp(0, last);
+        });
+      }
+      return KeyEventResult.handled;
+    }
+
+    if (pressed) {
+      if (_panelCol == SettingsPanel.tvSleepColumn) {
+        _pickSleep(_panelRow == 0
+            ? null
+            : Duration(minutes: SettingsPanel.minutes[_panelRow - 1]));
+      } else if (_panelRow == SettingsPanel.tvDiagnosticsRow) {
+        // Flipped here and read after Back: the reading is drawn on the HUD,
+        // which is dead under the panel's scrim anyway.
+        setState(() => _forceDiagnostics = !_forceDiagnostics);
+      }
+      // Nothing for the middle button to commit on the level's own row - it is
+      // already moving under the left and right keys.
+      return KeyEventResult.handled;
+    }
+
+    return KeyEventResult.ignored;
+  }
+
+  void _activateFocus() {
+    final c = widget.controller;
+    switch (_focus.control) {
+      case TvControl.gear:
+        setState(() {
+          _sleepVisible = true;
+          _panelCol = SettingsPanel.tvSleepColumn;
+          _panelRow = 0;
+        });
+        _hudTimer?.cancel();
+        return;
+      case TvControl.transport:
+        c.toggle();
+        _restartHudTimer();
+        return;
+      case TvControl.mood:
+        c.setMood(_focus.mood);
+        _restartHudTimer();
+        return;
+    }
+  }
+
+  /// Which way an arrow key moves the field, or null for anything else. In
+  /// steps small enough that holding a key reads as a slow sweep rather than
+  /// as a jump.
+  Offset? _arrowOffset(LogicalKeyboardKey key) {
+    const step = 0.035;
+    if (key == LogicalKeyboardKey.arrowLeft) return const Offset(-step, 0);
+    if (key == LogicalKeyboardKey.arrowRight) return const Offset(step, 0);
+    if (key == LogicalKeyboardKey.arrowUp) return const Offset(0, -step);
+    if (key == LogicalKeyboardKey.arrowDown) return const Offset(0, step);
+    return null;
   }
 
   // --------------------------------------------------------------- volume
@@ -402,8 +588,23 @@ class _FieldScreenState extends State<FieldScreen>
     // sheet of the same thing. One number, so the transport, the dots and the
     // lettering all grow together and nothing has to be redrawn by hand.
     final shortest = media.size.shortestSide;
-    final scale =
-        isDesktop ? (shortest / 620).clamp(1.0, 1.5).toDouble() : 1.0;
+    final double scale = isDesktop
+        ? (shortest / 620).clamp(1.0, 1.5).toDouble()
+        : isTv
+            ? tvChromeScale(shortest)
+            : 1.0;
+    _uiScale = scale;
+
+    // Overscan. A television may simply not show the outermost few per cent of
+    // the picture, and nothing reports how much: MediaQuery.padding is about
+    // system bars and there are none here. The field is happy to bleed off the
+    // edges - it is a field, not a frame - so this insets the chrome only.
+    final overscan = isTv
+        ? EdgeInsets.symmetric(
+            horizontal: media.size.width * 0.04,
+            vertical: media.size.height * 0.04,
+          )
+        : EdgeInsets.zero;
 
     // Nothing to point at while the chrome is away, so the pointer goes too.
     final hideCursor = isDesktop && !_hudVisible && !_sleepVisible;
@@ -440,7 +641,7 @@ class _FieldScreenState extends State<FieldScreen>
 
           // Wordmark. Visible with the HUD only - it is a title, not a status.
           Positioned(
-            top: media.padding.top + 22 * scale,
+            top: media.padding.top + overscan.top + 22 * scale,
             left: 0,
             right: 0,
             child: IgnorePointer(
@@ -487,8 +688,8 @@ class _FieldScreenState extends State<FieldScreen>
           // The gear. Rides in and out with the HUD, so the resting picture
           // stays chromeless; opens the one setting the app has.
           Positioned(
-            top: media.padding.top + 8,
-            right: 10,
+            top: media.padding.top + overscan.top + 8,
+            right: overscan.right + 10,
             child: AnimatedOpacity(
               opacity: chrome ? 1 : 0,
               duration: const Duration(milliseconds: 550),
@@ -498,6 +699,7 @@ class _FieldScreenState extends State<FieldScreen>
                 child: GearButton(
                   colour: palette.accent,
                   scale: scale,
+                  focused: isTv && _focus.control == TvControl.gear,
                   onTap: () {
                     setState(() => _sleepVisible = true);
                     _hudTimer?.cancel();
@@ -510,19 +712,33 @@ class _FieldScreenState extends State<FieldScreen>
           Align(
             alignment: Alignment.bottomCenter,
             child: Padding(
-              padding: EdgeInsets.only(bottom: media.padding.bottom + 34 * scale),
+              padding: EdgeInsets.only(
+                  bottom: media.padding.bottom + overscan.bottom + 34 * scale),
               child: AnimatedOpacity(
                 opacity: chrome ? 1 : 0,
                 duration: const Duration(milliseconds: 550),
                 curve: Curves.easeOut,
                 child: IgnorePointer(
                   ignoring: !chrome,
-                  child: Hud(
+                  // The chrome is anchored to the bottom and grows upwards, so
+                  // anything that makes it taller - the diagnostics block, four
+                  // lines of it - walks it into the wordmark at the top. A
+                  // window can afford that because it has height to spare; a
+                  // television reports 540 logical pixels and does not. Bounded
+                  // to what is actually free above the bottom padding and
+                  // scaled down if it does not fit, which is the same answer
+                  // the settings panel already gives to the same question.
+                  child: _boundedForTv(
+                    context,
+                    scale: scale,
+                    overscan: overscan,
+                    child: Hud(
                     palette: palette,
                     mood: c.mood,
                     playing: c.playing,
                     rootHz: _state.vis.rootHz,
                     scale: scale,
+                    focus: isTv ? _focus : null,
                     sleepLabel: _sleepLabel(c),
                     updateLabel: _updateLabel(),
                     onUpdateTap: _onUpdateTap,
@@ -542,6 +758,7 @@ class _FieldScreenState extends State<FieldScreen>
                       c.toggle();
                       _restartHudTimer();
                     },
+                    ),
                   ),
                 ),
               ),
@@ -563,32 +780,48 @@ class _FieldScreenState extends State<FieldScreen>
                   onTap: _closeSleep,
                   child: Container(
                     color: Colors.black.withValues(alpha: 0.55),
-                    child: Center(
-                      child: SettingsPanel(
-                        accent: palette.accent,
-                        remaining: c.sleepRemaining,
-                        choice: c.sleepChoice,
-                        scale: scale,
-                        showKeys: isDesktop,
-                        // A phone has a hardware volume rocker an inch from
-                        // the thumb already holding it; a window does not.
-                        volume: isDesktop ? c.volume : null,
-                        onVolume: c.setVolume,
-                        // Only where there is a version to compare. A build
-                        // CI did not cut would be claiming to be up to date
-                        // on no evidence at all.
-                        updates: widget.updater.enabled
-                            ? UpdatePanel(
-                                auto: widget.updater.auto,
-                                busy: widget.updater.busy,
-                                status: _updateStatus(),
-                                onAuto: (v) =>
-                                    unawaited(widget.updater.setAuto(v)),
-                                onCheck: () => unawaited(
-                                    widget.updater.check(force: true)),
-                              )
-                            : null,
-                        onPick: _pickSleep,
+                    // The scrim covers the whole screen - it is the thing being
+                    // dimmed - but what is written on it obeys the same overscan
+                    // inset as the rest of the chrome. Without this the panel was
+                    // the one piece laid out to the physical edge, and on a set
+                    // that hides its outermost few per cent the heading went with
+                    // it.
+                    child: Padding(
+                      padding: overscan,
+                      child: Center(
+                        child: SettingsPanel(
+                          accent: palette.accent,
+                          remaining: c.sleepRemaining,
+                          choice: c.sleepChoice,
+                          scale: scale,
+                          showKeys: isDesktop,
+                          tv: isTv,
+                          focusColumn: _panelCol,
+                          focusRow: _panelRow,
+                          diagnosticsOn: _forceDiagnostics,
+                          onDiagnostics: () => setState(
+                              () => _forceDiagnostics = !_forceDiagnostics),
+                          // A phone has a hardware volume rocker an inch from
+                          // the thumb already holding it; a window does not, and
+                          // a television's own buttons move the television.
+                          volume: isDesktop || isTv ? c.volume : null,
+                          onVolume: c.setVolume,
+                          // Only where there is a version to compare. A build
+                          // CI did not cut would be claiming to be up to date
+                          // on no evidence at all.
+                          updates: widget.updater.enabled
+                              ? UpdatePanel(
+                                  auto: widget.updater.auto,
+                                  busy: widget.updater.busy,
+                                  status: _updateStatus(),
+                                  onAuto: (v) =>
+                                      unawaited(widget.updater.setAuto(v)),
+                                  onCheck: () => unawaited(
+                                      widget.updater.check(force: true)),
+                                )
+                              : null,
+                          onPick: _pickSleep,
+                        ),
                       ),
                     ),
                   ),
@@ -599,6 +832,32 @@ class _FieldScreenState extends State<FieldScreen>
         ],
       ),
     );
+
+    if (isTv) {
+      // Back arrives as a route pop rather than as a key, so it is handled here
+      // rather than in _onTvKey. It unwinds the layers Escape unwinds on a
+      // desktop, and only the bare picture lets it out of the app: a Back that
+      // closed the whole instrument because a panel happened to be open would
+      // make for a bad night.
+      return PopScope(
+        canPop: false,
+        onPopInvokedWithResult: (didPop, _) {
+          if (didPop) return;
+          if (_sleepVisible) {
+            _closeSleep();
+          } else if (_hudVisible) {
+            _hideHud();
+          } else {
+            SystemNavigator.pop();
+          }
+        },
+        child: Focus(
+          autofocus: true,
+          onKeyEvent: (_, event) => _onTvKey(event),
+          child: screen,
+        ),
+      );
+    }
 
     if (!isDesktop) return screen;
 
@@ -621,6 +880,33 @@ class _FieldScreenState extends State<FieldScreen>
           child: screen,
         ),
       ),
+    );
+  }
+
+  /// Caps the chrome's height on a television and shrinks it rather than
+  /// letting it run off the top. A no-op everywhere else, where the window is
+  /// tall enough that the question never comes up.
+  ///
+  /// The ceiling leaves the wordmark's band alone: it is the thing the chrome
+  /// was colliding with, and a title the transport is sitting on top of reads
+  /// as a bug rather than as a dense layout.
+  Widget _boundedForTv(
+    BuildContext context, {
+    required double scale,
+    required EdgeInsets overscan,
+    required Widget child,
+  }) {
+    if (!isTv) return child;
+    final media = MediaQuery.of(context);
+    final wordmarkBand = media.padding.top + overscan.top + 46 * scale;
+    final bottomTaken =
+        media.padding.bottom + overscan.bottom + 34 * scale;
+    return ConstrainedBox(
+      constraints: BoxConstraints(
+        maxHeight:
+            (media.size.height - wordmarkBand - bottomTaken).clamp(0.0, 4000.0),
+      ),
+      child: FittedBox(fit: BoxFit.scaleDown, child: child),
     );
   }
 
@@ -680,7 +966,10 @@ class _FieldScreenState extends State<FieldScreen>
       case UpdateStage.ready:
         return u.handoff ?? 'RESTARTING';
       case UpdateStage.failed:
-        return 'UPDATE FAILED';
+        // The reason, where there is one. A hand-off that says which permission
+        // to grant is not a failure the reader can do nothing about, and
+        // flattening both into UPDATE FAILED hid the one that was actionable.
+        return u.handoff ?? 'UPDATE FAILED';
     }
   }
 
@@ -704,7 +993,7 @@ class _FieldScreenState extends State<FieldScreen>
       case UpdateStage.ready:
         return u.handoff ?? 'RESTARTING';
       case UpdateStage.failed:
-        return 'DOWNLOAD FAILED';
+        return u.handoff ?? 'DOWNLOAD FAILED';
     }
   }
 
@@ -743,7 +1032,19 @@ class _FieldScreenState extends State<FieldScreen>
       if (ms != null) 'ms${ms ? 1 : 0}',
     ].join(' ');
     final session = c.sessionInfo();
-    return '${_status.line}\n$second${session.isEmpty ? '' : '\n$session'}';
+
+    // What the screen says it is. On a television this is the number the whole
+    // layout is derived from and the one thing that cannot be checked from
+    // here: sets report a logical size that has little to do with the panel in
+    // them, and picking a scale without it is guesswork. There is no console on
+    // a sideloaded build, so it is printed where the rest of the readings are.
+    final m = MediaQuery.of(context);
+    final geometry = '${m.size.width.round()}x${m.size.height.round()}'
+        ' dpr${m.devicePixelRatio.toStringAsFixed(1)}'
+        ' ui${_uiScale.toStringAsFixed(2)}';
+
+    return '${_status.line}\n$second\n$geometry'
+        '${session.isEmpty ? '' : '\n$session'}';
   }
 }
 
