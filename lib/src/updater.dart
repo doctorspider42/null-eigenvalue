@@ -5,6 +5,8 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'platform.dart';
+
 /// What this build calls itself.
 ///
 /// Empty in a local `flutter run`, and that is the point: an updater that
@@ -24,6 +26,7 @@ String? get _assetForThisPlatform {
   if (Platform.isWindows) return 'NullEigenvalue-Setup.exe';
   if (Platform.isMacOS) return 'NullEigenvalue.dmg';
   if (Platform.isLinux) return 'NullEigenvalue-x86_64.AppImage';
+  if (Platform.isAndroid) return 'NullEigenvalue.apk';
   return null;
 }
 
@@ -111,12 +114,20 @@ class Updater extends ChangeNotifier {
   /// Whether a check or a download is in flight.
   bool get busy => _busy;
 
-  /// Whether the app should show anything at all about updates. A dev build
-  /// has no version to compare, and a phone gets its updates from AltStore or
-  /// from the .apk it was installed with.
+  /// Whether the app should show anything at all about updates. A dev build has
+  /// no version to compare, so it never offers one.
+  ///
+  /// Android is here because it is the platform where the alternative is worst:
+  /// the `.apk` is sideloaded, so nothing else will ever offer it a new
+  /// version, and on a television the manual route means typing a release URL
+  /// into an on-screen keyboard with a D-pad. iOS is not, and cannot be - the
+  /// `.ipa` is re-signed by AltStore, which does its own updating.
   bool get enabled =>
       current.isNotEmpty &&
-      (Platform.isWindows || Platform.isMacOS || Platform.isLinux);
+      (Platform.isWindows ||
+          Platform.isMacOS ||
+          Platform.isLinux ||
+          Platform.isAndroid);
 
   /// Reads the one preference this object owns.
   ///
@@ -256,6 +267,16 @@ class Updater extends ChangeNotifier {
         // never goes empty between the two.
         await Future<void>.delayed(const Duration(milliseconds: 900));
         exit(0);
+      } else if (Platform.isAndroid) {
+        // Android will not let an app replace itself: the APK goes to the
+        // system installer, which asks the user and does the work. Whatever
+        // stops that is reported verbatim rather than as a failed download -
+        // the reason is almost always the per-app install permission, which is
+        // two presses to clear, and flattening it into "update failed" hides
+        // the one outcome the reader can act on.
+        final reason = await AppInstaller.install(file.path);
+        handoff = reason == null ? 'CONFIRM ON SCREEN' : reason.toUpperCase();
+        stage = reason == null ? UpdateStage.ready : UpdateStage.failed;
       } else if (Platform.isMacOS) {
         // Mounting the image and dragging the app is the Mac's own idiom for
         // this, and it is the only one that works for an app the user
@@ -328,7 +349,13 @@ class Updater extends ChangeNotifier {
       final total = response.contentLength > 0
           ? response.contentLength
           : _assetBytes;
-      final dir = await Directory.systemTemp.createTemp('nulleig_update');
+      // Android insists the file land somewhere its FileProvider is configured
+      // to serve, so the native side names the directory; everywhere else the
+      // system temporary directory is exactly right.
+      final staging = await AppInstaller.stagingDirectory();
+      final dir = staging != null
+          ? Directory(staging)
+          : await Directory.systemTemp.createTemp('nulleig_update');
       final file = File('${dir.path}/${url.pathSegments.last}');
       final sink = file.openWrite();
       var received = 0;

@@ -601,11 +601,25 @@ class SettingsPanel extends StatelessWidget {
   /// least chance of anyone having a console open.
   static const int tvDiagnosticsRow = 1;
 
+  /// The one row that both checks for a new version and installs it. Two verbs
+  /// on one row because which of them is meant is never ambiguous - there is
+  /// either something to install or there is not - and a remote should walk
+  /// past as few rows as the app can manage.
+  static const int tvUpdateRow = 2;
+
+  /// Whether to go looking by itself. Worth its own row even here: "do not use
+  /// my network unasked" is a different wish from "never offer me a new
+  /// version", and only the first one is common.
+  static const int tvAutoRow = 3;
+
   /// How many rows [column] has. Counting and drawing must agree: walking onto
   /// a row that is not drawn makes the ring vanish, which is not a failure
-  /// anyone would think to report. A test holds the two together.
-  static int tvRowsIn(int column) =>
-      column == tvSleepColumn ? 1 + minutes.length : tvDiagnosticsRow + 1;
+  /// anyone would think to report. A test holds the two together - including
+  /// the last two rows, which exist only where there is an updater to talk to.
+  static int tvRowsIn(int column, {required bool withUpdates}) =>
+      column == tvSleepColumn
+          ? 1 + minutes.length
+          : (withUpdates ? tvAutoRow + 1 : tvDiagnosticsRow + 1);
 
   /// The master level, 0..1, or null to leave the section out entirely - which
   /// is what a phone does, having a hardware volume control six inches from
@@ -681,6 +695,26 @@ class SettingsPanel extends StatelessWidget {
                 row: tvDiagnosticsRow,
                 onTap: onDiagnostics ?? () {},
               ),
+              if (updates != null) ...<Widget>[
+                SizedBox(height: 20 * scale),
+                _row(
+                  updates!.primaryLabel,
+                  // Never the accent. It is a verb, and colouring it like an
+                  // armed sleep duration would read as a state.
+                  selected: false,
+                  col: tvSettingsColumn,
+                  row: tvUpdateRow,
+                  onTap: updates!.busy ? () {} : updates!.primaryAction,
+                ),
+                _row(
+                  'AUTOMATIC',
+                  selected: updates!.auto,
+                  col: tvSettingsColumn,
+                  row: tvAutoRow,
+                  onTap: () => updates!.onAuto(!updates!.auto),
+                ),
+                _note(updates!.status),
+              ],
             ],
           ),
           Column(
@@ -1023,6 +1057,8 @@ class UpdatePanel {
     required this.status,
     required this.onAuto,
     required this.onCheck,
+    this.primaryLabel = 'CHECK NOW',
+    this.onPrimary,
   });
 
   /// Whether the app looks for a new version by itself.
@@ -1038,4 +1074,16 @@ class UpdatePanel {
 
   final ValueChanged<bool> onAuto;
   final VoidCallback onCheck;
+
+  /// What the television's single update row says, which is also what pressing
+  /// it does: check when there is nothing on offer, install when there is.
+  /// Supplied rather than derived, so this file goes on knowing nothing about
+  /// UpdateStage.
+  final String primaryLabel;
+
+  final VoidCallback? onPrimary;
+
+  /// Pressing that row. Falls back to [onCheck], which is what the default
+  /// label says when nothing else has been supplied.
+  VoidCallback get primaryAction => onPrimary ?? onCheck;
 }

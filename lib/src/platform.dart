@@ -76,6 +76,56 @@ double tvChromeScale(double shortestSide) =>
 bool get hasMediaSession =>
     Platform.isAndroid || Platform.isIOS || Platform.isMacOS;
 
+/// Handing a downloaded APK to the system installer.
+///
+/// Android only, and deliberately the whole of the app's install story there:
+/// an app cannot replace itself, it can only ask the package installer to. That
+/// is a `FileProvider` URI and an intent, which is a page of Kotlin in
+/// `MainActivity` against a plugin that would want considerably more trust than
+/// the one thing it is being asked for.
+class AppInstaller {
+  const AppInstaller._();
+
+  static const MethodChannel _channel =
+      MethodChannel('nulleigenvalue/installer');
+
+  /// Where a downloaded APK has to be written for [install] to be able to hand
+  /// it over, or null where there is no installer to hand it to.
+  ///
+  /// Asked for rather than assumed. `FileProvider` will only make a URI for a
+  /// file under a root named in `update_paths.xml`, and Dart's own temporary
+  /// directory is not one - downloading there produces a file that arrives
+  /// whole and then cannot be passed on, which reads as a failed download.
+  static Future<String?> stagingDirectory() async {
+    if (!Platform.isAndroid) return null;
+    try {
+      return await _channel.invokeMethod<String>('stagingDir');
+    } on PlatformException {
+      return null;
+    } on MissingPluginException {
+      return null;
+    }
+  }
+
+  /// Opens the installer on [path]. Null means it opened; anything else is a
+  /// short reason to put on screen - most often the per-app "install unknown
+  /// apps" permission, which the native side sends the user to rather than
+  /// failing silently.
+  static Future<String?> install(String path) async {
+    if (!Platform.isAndroid) return 'not android';
+    try {
+      return await _channel.invokeMethod<String>(
+        'install',
+        <String, Object?>{'path': path},
+      );
+    } on PlatformException catch (e) {
+      return e.message ?? e.code;
+    } on MissingPluginException {
+      return 'no installer channel';
+    }
+  }
+}
+
 /// The window, as far as this app cares about it: one switch.
 ///
 /// Implemented in each runner rather than taken from a package. It is about

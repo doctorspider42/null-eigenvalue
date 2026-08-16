@@ -624,10 +624,13 @@ class _FieldScreenState extends State<FieldScreen>
   }
 
   KeyEventResult _onPanelKey(LogicalKeyboardKey key, bool pressed) {
+    final withUpdates = widget.updater.enabled;
+
     if (key == LogicalKeyboardKey.arrowUp ||
         key == LogicalKeyboardKey.arrowDown) {
       final dir = key == LogicalKeyboardKey.arrowUp ? -1 : 1;
-      final last = SettingsPanel.tvRowsIn(_panelCol) - 1;
+      final last =
+          SettingsPanel.tvRowsIn(_panelCol, withUpdates: withUpdates) - 1;
       setState(() => _panelRow = (_panelRow + dir).clamp(0, last));
       return KeyEventResult.handled;
     }
@@ -655,7 +658,7 @@ class _FieldScreenState extends State<FieldScreen>
           ? SettingsPanel.tvSleepColumn
           : SettingsPanel.tvSettingsColumn;
       if (want != _panelCol) {
-        final last = SettingsPanel.tvRowsIn(want) - 1;
+        final last = SettingsPanel.tvRowsIn(want, withUpdates: withUpdates) - 1;
         setState(() {
           _panelCol = want;
           _panelRow = _panelRow.clamp(0, last);
@@ -673,6 +676,10 @@ class _FieldScreenState extends State<FieldScreen>
         // Flipped here and read after Back: the reading is drawn on the HUD,
         // which is dead under the panel's scrim anyway.
         setState(() => _forceDiagnostics = !_forceDiagnostics);
+      } else if (_panelRow == SettingsPanel.tvUpdateRow) {
+        if (!widget.updater.busy) _onUpdateAction();
+      } else if (_panelRow == SettingsPanel.tvAutoRow) {
+        unawaited(widget.updater.setAuto(!widget.updater.auto));
       }
       // Nothing for the middle button to commit on the level's own row - it is
       // already moving under the left and right keys.
@@ -1012,6 +1019,8 @@ class _FieldScreenState extends State<FieldScreen>
                                       unawaited(widget.updater.setAuto(v)),
                                   onCheck: () => unawaited(
                                       widget.updater.check(force: true)),
+                                  primaryLabel: _updateAction,
+                                  onPrimary: _onUpdateAction,
                                 )
                               : null,
                           onPick: _pickSleep,
@@ -1193,6 +1202,40 @@ class _FieldScreenState extends State<FieldScreen>
       case UpdateStage.failed:
         return u.handoff ?? 'DOWNLOAD FAILED';
     }
+  }
+
+  /// What the panel's one update row says. The same row whether there is
+  /// something to install or not, because on a remote every extra row is
+  /// another press and which verb is meant is never in doubt.
+  String get _updateAction {
+    final u = widget.updater;
+    switch (u.stage) {
+      case UpdateStage.available:
+        return 'INSTALL ${u.latest}';
+      case UpdateStage.downloading:
+        return 'DOWNLOADING ${(u.progress * 100).round()}%';
+      case UpdateStage.ready:
+        return u.handoff ?? 'RESTARTING';
+      case UpdateStage.idle:
+      case UpdateStage.checking:
+      case UpdateStage.upToDate:
+      case UpdateStage.checkFailed:
+      case UpdateStage.failed:
+        return 'CHECK NOW';
+    }
+  }
+
+  void _onUpdateAction() {
+    final u = widget.updater;
+    // Nothing to do once the installer has the file: the system is showing its
+    // own dialog over this one, and pressing again would fetch the same APK a
+    // second time.
+    if (u.stage == UpdateStage.ready) return;
+    if (u.stage == UpdateStage.available) {
+      unawaited(u.install());
+      return;
+    }
+    unawaited(u.check(force: true));
   }
 
   void _onUpdateTap() {
