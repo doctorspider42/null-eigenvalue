@@ -26,7 +26,22 @@ import 'src/updater.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  if (isMobile) {
+  // Before anything reads isTv, which is most of what follows. The same APK
+  // runs on a handset and on a set, so this is a question for the platform
+  // rather than something the build knows.
+  await detectTv();
+
+  if (isTv) {
+    // A television has no status bar worth keeping and no edge swipe that
+    // would bring one back by accident, so this is the one place in the app
+    // allowed to go fully immersive. Sticky rather than plain, because a stray
+    // press on a remote must not leave the system bars parked on top of the
+    // picture for the rest of the night.
+    await SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+    // No orientation call. MainActivity asks for landscape where it is a set
+    // and portrait where it is not, and a television has no second orientation
+    // to be asked about anyway.
+  } else if (isMobile) {
     // Edge to edge with transparent bars: the picture is the app, and a status
     // bar with a background on top of it looks like a mistake.
     await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);

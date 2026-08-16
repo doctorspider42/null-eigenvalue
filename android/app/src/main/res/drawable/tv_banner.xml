@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The banner a television's home screen shows instead of an icon. 320x180 is
+     the size Leanback asks for; this is a vector so the one file serves every
+     density a set might claim to be, and so it needs no image tooling in a
+     repository that otherwise generates its artwork from Python.
+
+     Same field as the launcher icon and the same three colours as
+     tools/icons/make_icons.py - a dark ground, one soft orb, and a hairline
+     ring around the place the sound comes from. Deliberately wordless: the app
+     draws its own name in thin tracked letters over the field and a second,
+     chunkier wordmark baked into the banner would not be the same thing. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="320dp"
+    android:height="180dp"
+    android:viewportWidth="320"
+    android:viewportHeight="180">
+
+    <path android:pathData="M0,0h320v180h-320z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:type="linear"
+                android:startX="0"
+                android:startY="0"
+                android:endX="0"
+                android:endY="180">
+                <item android:offset="0" android:color="#FF03060B"/>
+                <item android:offset="1" android:color="#FF080E18"/>
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- The deep wash the orb sits in, wide and nearly gone by the edges. -->
+    <path android:pathData="M0,0h320v180h-320z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:type="radial"
+                android:centerX="112"
+                android:centerY="92"
+                android:gradientRadius="170">
+                <item android:offset="0" android:color="#B31B7C97"/>
+                <item android:offset="0.5" android:color="#3D0E2A4A"/>
+                <item android:offset="1" android:color="#000E2A4A"/>
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- The orb. -->
+    <path android:pathData="M0,0h320v180h-320z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:type="radial"
+                android:centerX="112"
+                android:centerY="92"
+                android:gradientRadius="54">
+                <item android:offset="0" android:color="#E65CE0CC"/>
+                <item android:offset="0.35" android:color="#665CE0CC"/>
+                <item android:offset="1" android:color="#005CE0CC"/>
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- The ring, at the hairline weight everything in this app is drawn at. -->
+    <path
+        android:pathData="M44,92 a68,68 0 1,0 136,0 a68,68 0 1,0 -136,0"
+        android:strokeColor="#595CE0CC"
+        android:strokeWidth="1.2"/>
+</vector>
