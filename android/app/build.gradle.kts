@@ -10,7 +10,7 @@ android {
     // Pinned, and pinned to the same value as packages/nulleig/android: two
     // modules asking for two NDKs means Gradle needs both installed, and CI
     // installs exactly one.
-    ndkVersion = "27.0.12077973"
+    ndkVersion = "28.2.13676358"
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
