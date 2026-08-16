@@ -154,15 +154,28 @@ xattr -dr com.apple.quarantine "/Applications/Null Eigenvalue.app"
 **Linux.** `NullEigenvalue-x86_64.AppImage`. `chmod +x` and run it; it needs
 GTK 3, and finds ALSA, PulseAudio, PipeWire or JACK by itself at run time.
 
-### Updating a desktop build
+### Updating in place
 
-The three desktop builds ask GitHub what the newest release is — once per
-launch, at most once every six hours, several seconds after the audio is
-already running so a slow network can never be between you and the first
-sound. When there is a newer one, a line appears under the frequency readout;
-clicking it fetches that platform's installer and hands it over. Windows
+The three desktop builds and the Android one ask GitHub what the newest release
+is — once per launch, at most once every six hours, several seconds after the
+audio is already running so a slow network can never be between you and the
+first sound. When there is a newer one, a line appears under the frequency
+readout; taking it fetches that platform's build and hands it over. Windows
 installs silently and reopens the app, macOS mounts the disk image, and Linux
 replaces the AppImage in place and asks to be restarted.
+
+**Android** cannot replace itself — no app there can — so it downloads the
+`.apk` and passes it to the system installer, which asks before doing anything.
+The first time, Android will refuse until the app is allowed to be a source of
+installs; the app opens that settings screen rather than appearing to have done
+nothing, since there is no other way to ask for that permission and a
+television has no notification shade to go looking in.
+
+This matters most on a set, where the alternative is typing a release URL into
+an on-screen keyboard with a D-pad every time. On a television the two controls
+below are rows in the panel's middle column, reachable with the remote.
+
+The `.ipa` is left out: AltStore re-signs and updates it on its own schedule.
 
 Behind the gear, **UPDATES** has the two controls that go with that.
 **AUTOMATIC** turns the unprompted check off; **CHECK NOW** asks anyway,

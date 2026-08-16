@@ -10,6 +10,18 @@
     <uses-permission android:name="android.permission.WAKE_LOCK"/>
     <!-- Android 13+ will not show the transport notification without this. -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+    <!-- Asking GitHub whether there is a newer release. Flutter's template
+         declares this in the debug and profile manifests only - it is what the
+         tooling uses to reach the running app - so a release build has no
+         network at all unless it is said here, and the failure is
+         indistinguishable from being offline. -->
+    <uses-permission android:name="android.permission.INTERNET"/>
+    <!-- Handing the downloaded APK to the system installer. An app cannot
+         replace itself on Android; it can only ask, and the installer will not
+         open for an app that has not declared this. The user still has to allow
+         it per-app and still has to confirm the install - this only makes the
+         asking possible. -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>
 
     <!-- One APK for both. Leanback is the television UI and is required="false"
          so this still installs on a handset; what must be declared either way
@@ -73,6 +85,21 @@
                 <action android:name="android.intent.action.MEDIA_BUTTON"/>
             </intent-filter>
         </receiver>
+
+        <!-- How the downloaded APK reaches the package installer. A file:// URI
+             has thrown FileUriExposedException since Nougat, so it is handed
+             over as a content URI with a read grant lasting only as long as the
+             installer does. The authority is matched literally in
+             MainActivity. -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.updates"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/update_paths"/>
+        </provider>
 
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->

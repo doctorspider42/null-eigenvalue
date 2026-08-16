@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- What the update FileProvider is allowed to hand out.
+
+     The cache directory, and nothing else. MainActivity names this same
+     directory to Dart before the download starts, so the APK lands under a
+     configured root by construction - getUriForFile throws when it does not,
+     and that throw arrives after a download which has already finished, so it
+     reads on screen as the download itself having failed.
+
+     Deliberately not the whole of the app's storage: this provider exists to
+     pass one file to the package installer, and a wider root would let
+     anything holding a content URI read the rest. -->
+<paths>
+    <cache-path name="updates" path="." />
+</paths>

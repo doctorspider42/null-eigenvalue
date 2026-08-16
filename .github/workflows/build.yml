@@ -110,9 +110,13 @@ jobs:
       - run: flutter pub get
       - name: Build the APK
         run: |
+          # NE_VERSION as well as the build name, because the updater compares
+          # against it: without it the .apk does not know what it is, stays
+          # quiet, and is indistinguishable from one that is up to date.
           flutter build apk --release \
             --build-name=${{ needs.version.outputs.version }} \
-            --build-number=${{ needs.version.outputs.build }}
+            --build-number=${{ needs.version.outputs.build }} \
+            --dart-define=NE_VERSION=${{ needs.version.outputs.version }}
 
       - name: Confirm the engine is actually in the APK
         run: |

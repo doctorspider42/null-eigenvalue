@@ -54,15 +54,37 @@ void main() {
       // handler turns row n into minutes[n - 1], so an off-by-one picks the
       // wrong duration rather than failing outright.
       expect(
-        SettingsPanel.tvRowsIn(SettingsPanel.tvSleepColumn),
+        SettingsPanel.tvRowsIn(SettingsPanel.tvSleepColumn, withUpdates: true),
         SettingsPanel.minutes.length + 1,
       );
-      // And the settings column is the level and the diagnostics switch, both
-      // of which are always drawn on a television.
+      // Whether there is an updater is the settings column's business; the
+      // durations do not move either way.
       expect(
-        SettingsPanel.tvRowsIn(SettingsPanel.tvSettingsColumn),
-        SettingsPanel.tvDiagnosticsRow + 1,
+        SettingsPanel.tvRowsIn(SettingsPanel.tvSleepColumn, withUpdates: false),
+        SettingsPanel.tvRowsIn(SettingsPanel.tvSleepColumn, withUpdates: true),
       );
+    });
+
+    test('the update rows are only walkable where there is an updater', () {
+      // Both rows are drawn behind `updates != null` and counted behind the
+      // same condition. If the two ever disagree the D-pad either stops one row
+      // short of INSTALL or walks onto a row that is not there - and the second
+      // is silent, because the ring simply vanishes.
+      expect(SettingsPanel.tvUpdateRow, SettingsPanel.tvDiagnosticsRow + 1);
+      expect(SettingsPanel.tvAutoRow, SettingsPanel.tvUpdateRow + 1);
+      expect(
+        SettingsPanel.tvRowsIn(SettingsPanel.tvSettingsColumn,
+            withUpdates: true),
+        SettingsPanel.tvRowsIn(SettingsPanel.tvSettingsColumn,
+                withUpdates: false) +
+            2,
+      );
+    });
+
+    test('a build CI did not cut never offers itself an update', () {
+      // The guard that keeps a working tree from being replaced by a release,
+      // and the reason the Android rows are conditional at all.
+      expect(Updater(currentVersion: '').enabled, isFalse);
     });
 
     test('the level is the first thing sideways of the durations', () {
