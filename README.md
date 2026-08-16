@@ -59,6 +59,37 @@ that also hides its shortcuts is just a locked door. On a Mac the media keys
 and Now Playing work exactly as the lock screen does on a phone; Windows and
 Linux have no equivalent to talk to.
 
+### On a television
+
+The Android build also runs on Android TV, off the same APK: the set shows it
+because the manifest carries a leanback launcher entry, and the app asks the
+system at startup which of the two it is on.
+
+A remote has no pointer and no keyboard, so the D-pad means two things
+depending on what is on screen — and only ever one of them at a time:
+
+| | |
+|---|---|
+| D-pad, picture bare | the field |
+| **OK**, picture bare | raise the chrome |
+| D-pad, chrome up | gear, transport, moods |
+| **OK**, chrome up | use what is ringed |
+| **back** | close the panel, then the chrome, then the app |
+
+That split is the whole design. The instrument stays under the D-pad whenever
+nothing is in the way, which is most of the time, and the chrome only takes the
+arrows once it is asked for. Whatever the remote is pointing at wears a thin
+ring in the mood's accent colour.
+
+Behind the gear the panel becomes three columns — the sleep durations, then the
+level and the diagnostics switch, then the key legend — because at the size
+three metres needs, one column runs off the bottom of a screen a D-pad cannot
+scroll. Left and right move between the two that have something to press; on
+the level itself they move the level.
+
+The diagnostics switch is there because a television is the one place with no
+console behind it and no easy way to ask why it has gone quiet.
+
 The gear is where everything the app can be told to do now lives: sleep, level,
 updates and the keys, in two columns on a window wide enough for them. The
 running version sits after the wordmark at the top, at half its weight — an app
@@ -101,6 +132,12 @@ same network as its desktop half.
 
 **Android.** The `.apk` installs directly. It is signed with a debug key, so
 the phone will ask you to allow installs from wherever you downloaded it.
+
+**Android TV.** The same `.apk`. A set has no browser to download it with, so
+it has to arrive some other way: a sideloading app such as Downloader takes the
+release URL and nothing else, or `adb connect <address>:5555` then
+`adb install -r NullEigenvalue.apk` from a machine on the same network. It
+appears on the home screen with a banner once installed.
 
 **Windows.** `NullEigenvalue-Setup.exe` installs into your own profile and
 needs no administrator. It is not signed, so SmartScreen will say it does not
