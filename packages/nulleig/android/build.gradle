@@ -35,7 +35,7 @@ android {
     // `android.ndkVersion` it resolves to whatever the Android Gradle Plugin
     // defaults to, which is a different NDK from the one the app asks for -
     // and then the build needs two of them installed.
-    ndkVersion = "27.0.12077973"
+    ndkVersion = "28.2.13676358"
 
     // Invoke the shared CMake build with the Android Gradle Plugin.
     externalNativeBuild {

@@ -21,7 +21,7 @@ env:
   # Pinned rather than taken from flutter.ndkVersion so that the runner can
   # install exactly what Gradle is about to ask for, instead of failing halfway
   # through a build to tell us.
-  NDK_VERSION: '27.0.12077973'
+  NDK_VERSION: '28.2.13676358'
 
 jobs:
   # ---------------------------------------------------------------- version
