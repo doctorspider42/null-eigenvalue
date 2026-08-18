@@ -96,6 +96,25 @@ NE_API void ne_set_field(ne_engine* e, float x, float y);
  * audible as shimmer rather than only as a parameter change. */
 NE_API void ne_set_touch(ne_engine* e, int active, float speed);
 
+/* The second gesture - two fingers on a phone, the right button on a desk -
+ * and the two things about a drone that a position in the field cannot reach:
+ * where it sits, and how fast it breathes.
+ *
+ * `semitones` transposes the whole instrument, drone and voices and bells
+ * together, by -12..+12. It rides on top of the root's own slow walk and does
+ * not touch the harmony: every interval in the chord is exactly where it was.
+ * Glided over a third of a second, so moving it is the field bending rather
+ * than the field cutting.
+ *
+ * `rate` multiplies every clock inside the instrument at once - the voices'
+ * breathing, their detune drift, the root walk, the weather, the chorus and
+ * the bell phrases. 1 is the piece as written, 0.25 is four times slower, 4 is
+ * four times faster. Nothing about the pitch, the timbre or the room moves
+ * with it; only how often things happen. Clamped to 0.25..4.
+ */
+NE_API void ne_set_pitch(ne_engine* e, float semitones);
+NE_API void ne_set_rate(ne_engine* e, float rate);
+
 /* Master fade. Anything non-zero fades up over ~1.2 s, zero fades down and
  * then idles the synthesis. The device keeps running either way so that the
  * OS does not reclaim the audio session mid-pause. */

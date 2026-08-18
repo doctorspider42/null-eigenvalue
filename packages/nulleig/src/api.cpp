@@ -222,6 +222,12 @@ NE_API void ne_set_field(ne_engine* e, float x, float y) {
 NE_API void ne_set_touch(ne_engine* e, int active, float speed) {
     if (e) ((Holder*)e)->engine.set_touch(active != 0, speed);
 }
+NE_API void ne_set_pitch(ne_engine* e, float semitones) {
+    if (e) ((Holder*)e)->engine.set_pitch(semitones);
+}
+NE_API void ne_set_rate(ne_engine* e, float rate) {
+    if (e) ((Holder*)e)->engine.set_rate(rate);
+}
 NE_API void ne_set_playing(ne_engine* e, int playing) {
     if (e) ((Holder*)e)->engine.set_playing(playing != 0);
 }

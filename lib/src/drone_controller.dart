@@ -25,6 +25,13 @@ class DroneController extends ChangeNotifier {
   bool _playing = false;
   bool _deviceOk = false;
 
+  /// The second gesture's two axes, held *before* the dead-band - see
+  /// [detent]. Semitones for the first, octaves-of-speed for the second, so
+  /// that both are linear in the distance a finger has moved and the speed
+  /// axis is symmetric about 1: -1 is half as fast, +1 is twice.
+  double _pitchRaw = 0;
+  double _rateRaw = 0;
+
   /// Master gain, 0..1.
   ///
   /// Not quite 1 by default: the synthesizer is mastered to leave a little
@@ -58,6 +65,40 @@ class DroneController extends ChangeNotifier {
   bool get deviceOk => _deviceOk;
   double get volume => _volume;
 
+  /// Semitones of transposition, -[pitchSpan]..[pitchSpan].
+  double get pitch => detent(_pitchRaw, pitchDetent, pitchSpan);
+
+  /// Octaves of speed, -[rateSpan]..[rateSpan]. 0 is the piece as written.
+  double get rateOctaves => detent(_rateRaw, rateDetent, rateSpan);
+
+  /// The multiplier the engine is actually being given, for the readout.
+  double get rate => math.pow(2, rateOctaves).toDouble();
+
+  /// An octave either way for the pitch, two for the speed - which is 0.25x to
+  /// 4x, the range over which the piece is still recognisably itself. Both are
+  /// what a full traverse of the screen covers, so the gesture reaches the ends
+  /// and never runs out of screen before it gets there.
+  static const double pitchSpan = 12;
+  static const double rateSpan = 2;
+
+  /// How far from home the axis is dead. This is the whole reason the raw
+  /// value is kept separately: an instrument you can detune but cannot
+  /// re-tune is broken, and on a control with no scale printed on it the only
+  /// findable home is one you can feel. Wide enough to fall into, narrow
+  /// enough that it is not a third of the useful range.
+  static const double pitchDetent = 0.4;
+  static const double rateDetent = 0.06;
+
+  /// The dead-band itself: nothing within [width] of home, and continuous
+  /// either side of it - the band is subtracted rather than snapped, so
+  /// leaving it is a slide rather than a jump.
+  static double detent(double raw, double width, double span) {
+    final v = raw.clamp(-span - width, span + width);
+    if (v > width) return v - width;
+    if (v < -width) return v + width;
+    return 0;
+  }
+
   MoodPalette get palette => MoodPalette.lerp(
         MoodPalette.all[_prevMood],
         MoodPalette.all[_mood],
@@ -84,6 +125,10 @@ class DroneController extends ChangeNotifier {
       // level was left at nothing last week is indistinguishable from one that
       // is broken, and this app has no other evidence to offer.
       _volume = (_prefs?.getDouble('volume') ?? 0.92).clamp(0.05, 1.0);
+      _pitchRaw = (_prefs?.getDouble('pitch') ?? 0.0)
+          .clamp(-pitchSpan - pitchDetent, pitchSpan + pitchDetent);
+      _rateRaw = (_prefs?.getDouble('rate') ?? 0.0)
+          .clamp(-rateSpan - rateDetent, rateSpan + rateDetent);
     } catch (_) {
       // A phone that will not give us preferences is not a reason to refuse to
       // make a sound.
@@ -91,6 +136,8 @@ class DroneController extends ChangeNotifier {
     engine.mood = _mood;
     engine.setField(_x, _y);
     engine.gain = _volume;
+    engine.pitch = pitch;
+    engine.rate = rate;
     notifyListeners();
   }
 
@@ -120,6 +167,8 @@ class DroneController extends ChangeNotifier {
     _prefs?.setDouble('x', _x);
     _prefs?.setDouble('y', _y);
     _prefs?.setDouble('volume', _volume);
+    _prefs?.setDouble('pitch', _pitchRaw);
+    _prefs?.setDouble('rate', _rateRaw);
   }
 
   /// Sets the master gain. The engine ramps to it internally, so this is safe
@@ -134,6 +183,29 @@ class DroneController extends ChangeNotifier {
   }
 
   void nudgeVolume(double delta) => setVolume(_volume + delta);
+
+  /// Moves the second field by a relative amount: [semitones] of transposition
+  /// and [octaves] of speed.
+  ///
+  /// Relative rather than absolute, because there is no third dimension for a
+  /// second pair of fingers to land in - an absolute mapping would jump the
+  /// tuning to wherever they happened to touch down. The accumulator is what
+  /// is kept, and the dead-band is applied on the way out, so a nudge inside
+  /// the band still moves the value it will eventually leave with.
+  ///
+  /// No notifyListeners, for the same reason [setField] has none: this runs
+  /// once per pointer move. What is on screen is the readout, and the screen
+  /// raises that itself.
+  void nudgeTone({double semitones = 0, double octaves = 0}) {
+    if (semitones == 0 && octaves == 0) return;
+    _pitchRaw = (_pitchRaw + semitones)
+        .clamp(-pitchSpan - pitchDetent, pitchSpan + pitchDetent);
+    _rateRaw = (_rateRaw + octaves)
+        .clamp(-rateSpan - rateDetent, rateSpan + rateDetent);
+    engine.pitch = pitch;
+    engine.rate = rate;
+    _save();
+  }
 
   void setField(double x, double y, {bool touching = true, double speed = 0}) {
     _x = x.clamp(0.0, 1.0);

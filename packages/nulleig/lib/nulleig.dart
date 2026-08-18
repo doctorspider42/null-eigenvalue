@@ -240,6 +240,10 @@ class DroneEngine {
   late final _setField = _lib.lookupFunction<_SetXYC, _SetXY>('ne_set_field');
   late final _setTouch =
       _lib.lookupFunction<_SetTouchC, _SetTouch>('ne_set_touch');
+  late final _setPitch =
+      _lib.lookupFunction<_SetFloatC, _SetFloat>('ne_set_pitch');
+  late final _setRate =
+      _lib.lookupFunction<_SetFloatC, _SetFloat>('ne_set_rate');
   late final _setPlaying =
       _lib.lookupFunction<_SetIntC, _SetInt>('ne_set_playing');
   late final _isPlaying = _lib.lookupFunction<_Int1C, _Int1>('ne_playing');
@@ -295,6 +299,18 @@ class DroneEngine {
   /// a fast drag audible rather than merely effective.
   void setTouch({required bool active, double speed = 0}) {
     if (!_disposed) _setTouch(_handle, active ? 1 : 0, speed);
+  }
+
+  /// Transposes the whole instrument, -12..+12 semitones. The engine glides to
+  /// it, so this is safe to call as fast as a finger produces positions.
+  set pitch(double semitones) {
+    if (!_disposed) _setPitch(_handle, semitones.clamp(-12.0, 12.0));
+  }
+
+  /// Multiplies every clock inside the instrument: 1 is the piece as written,
+  /// 0.25 is four times slower, 4 is four times faster.
+  set rate(double value) {
+    if (!_disposed) _setRate(_handle, value.clamp(0.25, 4.0));
   }
 
   set playing(bool value) {

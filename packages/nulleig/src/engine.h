@@ -109,6 +109,12 @@ class Engine {
         p_touch_.store(active ? 1 : 0, std::memory_order_relaxed);
         p_speed_.store(clampf(speed, 0.0f, 8.0f), std::memory_order_relaxed);
     }
+    // The second gesture's two axes. Both are stored raw and smoothed on the
+    // audio thread, so a finger moving at 120 Hz costs two atomic stores.
+    void set_pitch(float semitones) {
+        p_pitch_.store(clampf(semitones, -12.0f, 12.0f), std::memory_order_relaxed);
+    }
+    void set_rate(float r) { p_rate_.store(clampf(r, 0.25f, 4.0f), std::memory_order_relaxed); }
     void set_playing(bool p) { p_playing_.store(p ? 1 : 0, std::memory_order_relaxed); }
     bool playing() const { return p_playing_.load(std::memory_order_relaxed) != 0; }
     void set_gain(float g) { p_gain_.store(clampf(g, 0.0f, 1.5f), std::memory_order_relaxed); }
@@ -161,6 +167,8 @@ class Engine {
     std::atomic<float> p_y_{0.45f};
     std::atomic<int> p_touch_{0};
     std::atomic<float> p_speed_{0.0f};
+    std::atomic<float> p_pitch_{0.0f};
+    std::atomic<float> p_rate_{1.0f};
     std::atomic<int> p_playing_{0};
     std::atomic<float> p_gain_{0.85f};
     std::atomic<uint32_t> p_seed_{0x4e756c6cu};
@@ -200,7 +208,17 @@ class Engine {
     // Smoothed derived parameters.
     OnePole s_cutoff_, s_res_, s_morph_, s_bright_, s_dense_, s_air_,
         s_rev_mix_, s_dly_mix_, s_drive_, s_chorus_, s_tilt_, s_gain_,
-        s_bell_rate_, s_shimmer_, s_tone_;
+        s_bell_rate_, s_shimmer_, s_tone_, s_pitch_;
+    // Transposition in semitones, already smoothed, and the multiplier on
+    // every clock in the instrument. `rate_` is deliberately not smoothed: it
+    // scales a dt that is already tiny, so a step in it is a step in a
+    // derivative and nothing can click.
+    float pitch_ = 0.0f;
+    float rate_ = 1.0f;
+    // The weather's smoothing times are the one thing rate_ cannot scale by
+    // multiplying a dt - they are filter coefficients - so they are recomputed
+    // when it has moved enough to matter, the same way the reverb is.
+    float weather_rate_ = 0.0f;
     float exc_ = 0.0f;      // touch excitation, decays
     float gate_ = 0.0f;     // master fade
     float motion_ = 0.0f;   // how much harmony moved recently, for the visuals
