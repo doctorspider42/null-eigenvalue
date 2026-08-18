@@ -326,7 +326,22 @@ class _FieldScreenState extends State<FieldScreen>
   }
 
   /// Every finger, whether or not the recognizer made a gesture out of it.
-  void _onFingerDown(PointerDownEvent event) => _fingers++;
+  void _onFingerDown(PointerDownEvent event) {
+    // A gesture that starts from no fingers starts from rest. Every lock in
+    // here is cleared by an event that can fail to arrive - a pointer up that
+    // the window never sees, a cancel the platform does not send - and a lock
+    // that outlives its gesture is an instrument that has gone dead until it
+    // is restarted. Nothing about the previous gesture can be true any more at
+    // the moment the glass is empty and a new finger lands, so this is where
+    // the state is made to say so.
+    if (_fingers <= 0) {
+      _fingers = 0;
+      _toneLock = false;
+      _rightDrag = false;
+      _touching = false;
+    }
+    _fingers++;
+  }
 
   void _onFingerUp(PointerEvent event) {
     if (--_fingers > 0) return;
@@ -339,12 +354,26 @@ class _FieldScreenState extends State<FieldScreen>
   /// the field, so the second field is the right one.
   void _onMouseDown(PointerDownEvent event) {
     if (_sleepVisible) return;
-    if (event.buttons & kSecondaryButton == 0) return;
+    if (event.buttons & kSecondaryButton == 0) {
+      // A press that is not the right button cannot be part of a right drag,
+      // whatever the last one left behind.
+      _rightDrag = false;
+      return;
+    }
     _rightDrag = true;
   }
 
   void _onMouseMove(PointerMoveEvent event) {
     if (!_rightDrag) return;
+    // The button itself, every frame, rather than only the up that is supposed
+    // to end it: a drag whose release the window never saw would otherwise own
+    // the mouse for the rest of the session, and the symptom - the left button
+    // silently doing nothing afterwards - looks like the field is broken
+    // rather than like the second one is still held.
+    if (event.buttons & kSecondaryButton == 0) {
+      _rightDrag = false;
+      return;
+    }
     final size = context.size;
     if (size == null) return;
     _dragTone(event.delta, size);
@@ -1208,6 +1237,11 @@ class _FieldScreenState extends State<FieldScreen>
       'gate${v.gate.toStringAsFixed(2)}',
       'lvl${v.level.toStringAsFixed(3)}',
       'cb/s${_cbPerSec.round()}',
+      // What the pointer layer thinks is going on. The one piece of state in
+      // this app that can make every gesture stop working while the audio is
+      // demonstrably fine, and there is no console on a sideloaded build to
+      // ask it from.
+      'ptr$_fingers${_toneLock ? 'T' : '-'}${_rightDrag ? 'R' : '-'}${_touching ? 'F' : '-'}',
       if (ms != null) 'ms${ms ? 1 : 0}',
     ].join(' ');
     final session = c.sessionInfo();
