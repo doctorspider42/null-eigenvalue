@@ -135,7 +135,10 @@ class _FieldScreenState extends State<FieldScreen>
     final c = widget.controller;
     _state.target = Offset(c.fieldX, 1 - c.fieldY);
     _state.centre = _state.target;
-    _state.palette = c.palette;
+    _state.palette = c.tonedPalette;
+    // The field is remembered between launches, so the app opens somewhere in
+    // particular rather than in the middle. It says where.
+    _state.bumpMark();
     c.addListener(_onControllerChanged);
     widget.updater.addListener(_onControllerChanged);
     _ticker = createTicker(_onTick)..start();
@@ -175,7 +178,11 @@ class _FieldScreenState extends State<FieldScreen>
     c.tickBlend(dt);
     if (blending) setState(() {});
     c.syncFromEngine();
-    _state.palette = c.palette;
+    // Every frame, like the palette: all three are read by the painter and by
+    // nothing that would rebuild for them.
+    _state.palette = c.tonedPalette;
+    _state.rate = c.rate;
+    _state.tone = c.pitch / DroneController.pitchSpan;
 
     // Redraw the countdown once a second, and only when someone can see it.
     final sleepSec = c.sleepRemaining?.inSeconds ?? -1;
@@ -190,6 +197,9 @@ class _FieldScreenState extends State<FieldScreen>
     // while stopped does not make the centre glyph vanish on a frame boundary.
     _hudAmt += ((_hudVisible ? 1.0 : 0.0) - _hudAmt) * (1 - math.exp(-dt / 0.28));
     _state.idleHint = _idle * (1 - _hudAmt);
+    // Raising the chrome is already a request to be told what things are set
+    // to, so the field's mark comes up with it and goes back down after it.
+    _state.chrome = _hudAmt;
 
     _statusClock += dt;
     if (_statusClock > 0.5) {
@@ -728,7 +738,7 @@ class _FieldScreenState extends State<FieldScreen>
   @override
   Widget build(BuildContext context) {
     final c = widget.controller;
-    final palette = c.palette;
+    final palette = c.tonedPalette;
     final media = MediaQuery.of(context);
 
     // The phone's proportions are the design; a window is simply a bigger

@@ -90,6 +90,47 @@ class MoodPalette {
     );
   }
 
+  /// The palette as the second field's pitch leaves it. [amount] is octaves,
+  /// -1 .. 1, and 0 is exactly this palette back again.
+  ///
+  /// Transposing the music moves every voice by the same interval and leaves
+  /// every one of the chord's intervals where it was; this does the same thing
+  /// to the colours. Each stop slides one place along the ladder the palette
+  /// already is - [mid] takes [accent]'s place going up, [deep]'s going down -
+  /// rather than the whole picture being washed with a tint, which would say
+  /// "a filter has been put over this" and not "the instrument is lower".
+  ///
+  /// The page moves least and never becomes a hole. It has to keep being the
+  /// thing the additive blobs are added to, and an octave down that darkened
+  /// the background to black would take the depth out of the picture at the
+  /// same time as it took the light.
+  MoodPalette transposed(double amount) {
+    final a = amount.clamp(-1.0, 1.0).toDouble();
+    if (a == 0) return this;
+    if (a > 0) {
+      return MoodPalette(
+        name: name,
+        bg: Color.lerp(bg, deep, 0.20 * a)!,
+        deep: Color.lerp(deep, mid, 0.34 * a)!,
+        mid: Color.lerp(mid, accent, 0.34 * a)!,
+        // Nothing above accent to borrow from, so the top of the palette goes
+        // where a register that has run out of room actually goes: white. A
+        // little of it - the accent is what bells and the mark are drawn in,
+        // and at an octave up over a loud field a quarter of the way to white
+        // put a hole in the middle of the picture.
+        accent: Color.lerp(accent, const Color(0xFFFFFFFF), 0.16 * a)!,
+      );
+    }
+    final k = -a;
+    return MoodPalette(
+      name: name,
+      bg: Color.lerp(bg, const Color(0xFF000000), 0.30 * k)!,
+      deep: Color.lerp(deep, bg, 0.34 * k)!,
+      mid: Color.lerp(mid, deep, 0.38 * k)!,
+      accent: Color.lerp(accent, mid, 0.38 * k)!,
+    );
+  }
+
   /// The colour for register slice `i` of `n`, brightened by how bright the
   /// engine says it currently sounds. Low slices sit near [deep] and the top
   /// ones near [accent], so the picture's vertical spread is the music's.
