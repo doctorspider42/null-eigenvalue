@@ -1,5 +1,6 @@
 ﻿import 'dart:math' as math;
 import 'dart:typed_data';
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:nulleig/nulleig.dart';
@@ -439,22 +440,72 @@ class NebulaPainter extends CustomPainter {
     }
 
     // ---- the finger's wake -------------------------------------------------
+    // One draw call, and not one per segment.
+    //
+    // The wake is ninety points long - a pointer move per frame for about the
+    // second and a bit it takes to fade - and drawn as ninety stroked lines it
+    // was the most expensive thing in the app while a hand was on the glass:
+    // a drag cost about a tenth of a core more than the same picture standing
+    // still, and effectively all of that was here. A stroke is geometry
+    // somebody has to build and submit, and this was ninety of them a frame.
+    //
+    // The same shape is one triangle strip: two vertices per point, pushed out
+    // either side of the path, with the fade carried per vertex instead of in
+    // ninety separate paints. What was a stroke width is now the gap between
+    // the pair, and what was a round cap is the head's own blob - which was
+    // always drawn anyway, and is the only end of this that anyone looks at.
     if (state._trail.length > 1) {
-      for (var i = 1; i < state._trail.length; i++) {
-        final a = state._trail[i - 1];
-        final b = state._trail[i];
-        final fade = (1 - b.age / 1.1).clamp(0.0, 1.0);
-        if (fade <= 0.01) continue;
-        canvas.drawLine(
-          Offset(a.p.dx * size.width, a.p.dy * size.height),
-          Offset(b.p.dx * size.width, b.p.dy * size.height),
-          Paint()
-            ..strokeCap = StrokeCap.round
-            ..strokeWidth = 1.0 + 5.0 * fade * fade
-            ..blendMode = BlendMode.plus
-            ..color = palette.accent.withValues(alpha: 0.16 * fade),
-        );
+      final int n = state._trail.length;
+      final Float32List xy = Float32List(n * 4);
+      final Int32List tint = Int32List(n * 2);
+      final int rgb = palette.accent.toARGB32() & 0x00FFFFFF;
+
+      // Screen positions first: the normal at a point needs its neighbours,
+      // so the loop below would otherwise map the same point three times.
+      final List<Offset> pts = List<Offset>.generate(
+        n,
+        (i) => Offset(state._trail[i].p.dx * size.width,
+            state._trail[i].p.dy * size.height),
+        growable: false,
+      );
+
+      // A finger that stops still leaves points on top of each other, and a
+      // zero-length segment has no direction to be perpendicular to. Carrying
+      // the last usable normal keeps the ribbon flat through the pause rather
+      // than pinching it to nothing.
+      Offset normal = Offset.zero;
+      for (var i = 0; i < n; i++) {
+        final Offset back = pts[i > 0 ? i - 1 : i];
+        final Offset fwd = pts[i < n - 1 ? i + 1 : i];
+        final Offset d = fwd - back;
+        final double len = d.distance;
+        if (len > 1e-3) normal = Offset(-d.dy / len, d.dx / len);
+
+        final double fade = (1 - state._trail[i].age / 1.1).clamp(0.0, 1.0);
+        final double half = (1.0 + 5.0 * fade * fade) * 0.5;
+        final int alpha = ((0.16 * fade) * 255).round().clamp(0, 255);
+        final int colour = (alpha << 24) | rgb;
+
+        final Offset o = normal * half;
+        xy[i * 4 + 0] = pts[i].dx + o.dx;
+        xy[i * 4 + 1] = pts[i].dy + o.dy;
+        xy[i * 4 + 2] = pts[i].dx - o.dx;
+        xy[i * 4 + 3] = pts[i].dy - o.dy;
+        tint[i * 2 + 0] = colour;
+        tint[i * 2 + 1] = colour;
       }
+
+      canvas.drawVertices(
+        ui.Vertices.raw(ui.VertexMode.triangleStrip, xy, colors: tint),
+        // The vertex colours are the whole point, so the paint contributes
+        // nothing but white to multiply them by. Its own blend mode is what
+        // puts the result on the screen, additively, as before.
+        BlendMode.modulate,
+        Paint()
+          ..blendMode = BlendMode.plus
+          ..color = const Color(0xFFFFFFFF),
+      );
+
       final head = state._trail.last;
       final fade = (1 - head.age / 1.1).clamp(0.0, 1.0);
       _blob(
