@@ -14,13 +14,22 @@
       "iconURL": "https://doctorspider42.github.io/null-eigenvalue/icon.png",
       "tintColor": "5CE0CC",
       "screenshots": [],
-      "version": "0.1.23",
-      "versionDate": "2026-08-18T10:41:21Z",
-      "versionDescription": "Built from `84d9c37`.\n\n**iPhone** — `NullEigenvalue.ipa` is **unsigned**. The easiest route is to add\nthis AltStore source once and let it update itself from then on:\n\n`https://doctorspider42.github.io/null-eigenvalue/altstore.json`\n\nOtherwise sign and install the .ipa by hand with [AltStore](https://altstore.io)\nor [Sideloadly](https://sideloadly.io) using your own Apple ID. A free account\nworks; the app then has to be re-signed every seven days.\n\n**Android** — `NullEigenvalue.apk` installs directly. It is signed with a debug\nkey, so the phone will ask you to allow installs from wherever you got it.\n\n**Windows** — `NullEigenvalue-Setup.exe` installs under your own profile, so it\nneeds no administrator. SmartScreen will warn about an unknown publisher; the\ninstaller is not signed and there is no certificate in this repo.\n\n**macOS** — `NullEigenvalue.dmg`. Signed to itself and not notarised, so the\nfirst launch has to be right-click → Open, or:\n`xattr -dr com.apple.quarantine \"/Applicat",
+      "version": "0.1.25",
+      "versionDate": "2026-08-18T11:38:51Z",
+      "versionDescription": "Built from `9463972`.\n\n**iPhone** — `NullEigenvalue.ipa` is **unsigned**. The easiest route is to add\nthis AltStore source once and let it update itself from then on:\n\n`https://doctorspider42.github.io/null-eigenvalue/altstore.json`\n\nOtherwise sign and install the .ipa by hand with [AltStore](https://altstore.io)\nor [Sideloadly](https://sideloadly.io) using your own Apple ID. A free account\nworks; the app then has to be re-signed every seven days.\n\n**Android** — `NullEigenvalue.apk` installs directly. It is signed with a debug\nkey, so the phone will ask you to allow installs from wherever you got it.\n\n**Windows** — `NullEigenvalue-Setup.exe` installs under your own profile, so it\nneeds no administrator. SmartScreen will warn about an unknown publisher; the\ninstaller is not signed and there is no certificate in this repo.\n\n**macOS** — `NullEigenvalue.dmg`. Signed to itself and not notarised, so the\nfirst launch has to be right-click → Open, or:\n`xattr -dr com.apple.quarantine \"/Applicat",
       "downloadURL": "https://github.com/doctorspider42/null-eigenvalue/releases/latest/download/NullEigenvalue.ipa",
-      "size": 7558748,
+      "size": 7561217,
       "minOSVersion": "15.0",
       "versions": [
+        {
+          "version": "0.1.25",
+          "buildVersion": "25",
+          "date": "2026-08-18T11:38:51Z",
+          "localizedDescription": "Built from `9463972`.\n\n**iPhone** — `NullEigenvalue.ipa` is **unsigned**. The easiest route is to add\nthis AltStore source once and let it update itself from then on:\n\n`https://doctorspider42.github.io/null-eigenvalue/altstore.json`\n\nOtherwise sign and install the .ipa by hand with [AltStore](https://altstore.io)\nor [Sideloadly](https://sideloadly.io) using your own Apple ID. A free account\nworks; the app then has to be re-signed every seven days.\n\n**Android** — `NullEigenvalue.apk` installs directly. It is signed with a debug\nkey, so the phone will ask you to allow installs from wherever you got it.\n\n**Windows** — `NullEigenvalue-Setup.exe` installs under your own profile, so it\nneeds no administrator. SmartScreen will warn about an unknown publisher; the\ninstaller is not signed and there is no certificate in this repo.\n\n**macOS** — `NullEigenvalue.dmg`. Signed to itself and not notarised, so the\nfirst launch has to be right-click → Open, or:\n`xattr -dr com.apple.quarantine \"/Applicat",
+          "downloadURL": "https://github.com/doctorspider42/null-eigenvalue/releases/download/v0.1.25/NullEigenvalue.ipa",
+          "size": 7561217,
+          "minOSVersion": "15.0"
+        },
         {
           "version": "0.1.23",
           "buildVersion": "23",
