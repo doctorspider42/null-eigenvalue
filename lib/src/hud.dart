@@ -64,6 +64,7 @@ class Hud extends StatelessWidget {
     this.sleepLabel,
     this.updateLabel,
     this.onUpdateTap,
+    this.toneLabel,
     this.volumeLabel,
     this.diagnostics,
     this.onDiagnosticsTap,
@@ -99,6 +100,13 @@ class Hud extends StatelessWidget {
   /// else, which includes every phone and every build that CI did not cut.
   final String? updateLabel;
   final VoidCallback? onUpdateTap;
+
+  /// "PITCH +5.0   SPEED 1.80x", for the couple of seconds after the second
+  /// field moves. Transient for the same reason the level is, and above it
+  /// because it is the one the hand is on: the second field has no resting
+  /// display anywhere, and a line that was always there would be a permanent
+  /// readout of two numbers that are usually both nothing.
+  final String? toneLabel;
 
   /// "VOLUME 72%", for the couple of seconds after the level changes.
   ///
@@ -181,8 +189,21 @@ class Hud extends StatelessWidget {
             ),
           ),
         ),
-        // Above the sleep countdown, because it is the line that is currently
-        // moving and the one the reader just asked for.
+        // Both above the sleep countdown, because they are the lines something
+        // is currently moving and the ones the reader just asked for.
+        if (toneLabel != null) ...<Widget>[
+          SizedBox(height: 6 * scale),
+          Text(
+            toneLabel!,
+            style: TextStyle(
+              fontSize: 10 * scale,
+              height: 1.2,
+              letterSpacing: 2.4 * scale,
+              fontWeight: FontWeight.w300,
+              color: palette.accent.withValues(alpha: 0.55),
+            ),
+          ),
+        ],
         if (volumeLabel != null) ...<Widget>[
           SizedBox(height: 6 * scale),
           Text(
@@ -621,6 +642,8 @@ class SettingsPanel extends StatelessWidget {
     <String>['SPACE', 'PLAY / PAUSE'],
     <String>['1 - 6', 'MOOD'],
     <String>['ARROWS', 'FIELD'],
+    <String>['RIGHT DRAG', 'PITCH / SPEED'],
+    <String>['SHIFT ARROWS', 'PITCH / SPEED'],
     <String>['SCROLL', 'VOLUME'],
     <String>['- / =', 'VOLUME'],
     <String>['F', 'FULL SCREEN'],
@@ -826,7 +849,13 @@ class SettingsPanel extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               children: <Widget>[
                 SizedBox(
-                  width: 92 * scale,
+                  // Wide enough for the longest binding rather than for the
+                  // longest one there used to be. The column is right-aligned
+                  // so slack costs nothing but a little of a panel that has
+                  // room to spare, where a key label one character too long
+                  // wraps onto a second line and takes the row's alignment
+                  // with it.
+                  width: 120 * scale,
                   child: Text(
                     k[0],
                     textAlign: TextAlign.right,

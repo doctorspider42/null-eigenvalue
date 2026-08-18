@@ -87,6 +87,10 @@ Engine::Engine(int sample_rate) {
     s_bell_rate_.set_time(6.0f, csr);
     s_shimmer_.set_time(8.0f, csr);
     s_tone_.set_time(1.5f, csr);
+    // Fast by this engine's standards and slow by a pitch wheel's. Anything
+    // shorter and two fingers sliding up the screen sound like a tape edit;
+    // anything longer and the gesture stops feeling connected to the sound.
+    s_pitch_.set_time(0.30f, csr);
 
     w_bright_.set_time(16.0f, csr);
     w_dense_.set_time(22.0f, csr);
@@ -181,6 +185,11 @@ void Engine::reseed(uint32_t seed) {
     chorus_.clear();
     delay_.clear();
     reverb_.clear();
+    // Not reset to zero: the transposition is where the hand left it, not part
+    // of the piece being re-seeded. Snapped rather than glided, because there
+    // is nothing to glide from - the whole instrument has just been rebuilt.
+    s_pitch_.reset(p_pitch_.load(std::memory_order_relaxed));
+    pitch_ = s_pitch_.z;
     gate_ = 0.0f;
     exc_ = 0.0f;
     motion_ = 0.0f;
@@ -303,7 +312,7 @@ void Engine::fire_bell(int off, float level) {
 
     const Mood& m = mood_at(mood_cur_);
     float bright = s_bright_.z;
-    float f0 = midi_hz(root_cur_ + (float)off);
+    float f0 = midi_hz(root_cur_ + pitch_ + (float)off);
     while (f0 > sr_ * 0.16f) f0 *= 0.5f;
 
     Bell& b = bell_[slot];
@@ -357,13 +366,30 @@ void Engine::control_block() {
     float speed = p_speed_.load(std::memory_order_relaxed);
     bool play = p_playing_.load(std::memory_order_relaxed) != 0;
 
+    // The second gesture. `rate` scales every dt below this line; `pitch_` is
+    // added wherever a midi number becomes a frequency, and nowhere else - the
+    // harmony, the registers and the scale all stay in their own coordinates.
+    rate_ = p_rate_.load(std::memory_order_relaxed);
+    s_pitch_.process(p_pitch_.load(std::memory_order_relaxed));
+    pitch_ = s_pitch_.z;
+    const float rdt = dt * rate_;
+
     // ---- weather ----------------------------------------------------------
     // Pink rather than an LFO: 1/f has structure at every timescale, so the
     // piece gets stretches of calm and then a swell instead of a visible
     // period. Stepped four times a second and then smoothed over tens of
-    // seconds, which puts its energy between about 25 s and 4 minutes.
+    // seconds, which puts its energy between about 25 s and 4 minutes - all of
+    // it divided by the speed axis, which is the one place in the engine where
+    // that means recomputing a coefficient rather than scaling a dt.
+    if (std::fabs(rate_ - weather_rate_) > 0.02f) {
+        weather_rate_ = rate_;
+        const float csr = sr_ / (float)kControlBlock;
+        w_bright_.set_time(16.0f / rate_, csr);
+        w_dense_.set_time(22.0f / rate_, csr);
+        w_space_.set_time(40.0f / rate_, csr);
+    }
     if (--weather_div_ <= 0) {
-        weather_div_ = (int)(0.25f / dt);
+        weather_div_ = (int)(0.25f / rdt);
         if (weather_div_ < 1) weather_div_ = 1;
         w_bright_.process(weather_bright_.step());
         w_dense_.process(weather_dense_.step());
@@ -447,7 +473,7 @@ void Engine::control_block() {
     filt_l_.set(cutoff_, res_, sr_);
     filt_r_.set(cutoff_, res_, sr_);
 
-    chorus_.rate = 0.13f + 0.14f * space;
+    chorus_.rate = (0.13f + 0.14f * space) * rate_;
     chorus_.depth = 0.35f + 0.5f * b;
 
     delay_.time_samples = clampf(m.delay_sec * (0.85f + 0.3f * space), 0.05f, 9.5f) * sr_;
@@ -468,7 +494,7 @@ void Engine::control_block() {
     rev_predelay_ = (0.02f + 0.05f * space) * sr_;
 
     // Air bed: a resonant band whose centre wanders a couple of octaves.
-    air_phase_ += 0.021f * dt;
+    air_phase_ += 0.021f * rdt;
     if (air_phase_ >= 1.0f) air_phase_ -= 1.0f;
     float air_c = 420.0f * std::pow(2.0f, 2.9f * b + 0.85f * std::sin(kTwoPi * air_phase_));
     air_svf_l_.set(clampf(air_c, 80.0f, sr_ * 0.42f), 0.55f, sr_);
@@ -478,7 +504,7 @@ void Engine::control_block() {
     air_lp_r_.set_cutoff(air_broad * 0.86f, sr_);
 
     // ---- root walk --------------------------------------------------------
-    root_timer_ -= dt;
+    root_timer_ -= rdt;
     if (root_timer_ <= 0.0f) {
         root_timer_ = m.root_walk_sec * (0.6f + 0.9f * rng_pitch_.uni());
         // Fifths and thirds, with a restoring pull so the piece cannot wander
@@ -493,10 +519,10 @@ void Engine::control_block() {
     if (std::fabs(root_target_ - root_cur_) > 1e-4f) {
         // ~12 s to travel a fifth: slow enough to read as the whole field
         // moving rather than as a pitch bend.
-        float step = dt * 7.0f / 12.0f;
+        float step = rdt * 7.0f / 12.0f;
         float diff = root_target_ - root_cur_;
         root_cur_ += clampf(diff, -step, step);
-        motion_ = clampf(motion_ + dt * 0.5f, 0.0f, 1.0f);
+        motion_ = clampf(motion_ + rdt * 0.5f, 0.0f, 1.0f);
     }
 
     // ---- density gate -----------------------------------------------------
@@ -513,7 +539,7 @@ void Engine::control_block() {
         Voice& v = voice_[i];
 
         float prev_phase = v.breath_phase;
-        v.breath_phase += dt / v.breath_period;
+        v.breath_phase += rdt / v.breath_period;
         if (v.breath_phase >= 1.0f) {
             v.breath_phase -= 1.0f;
             if (i >= kRootVoices) repitch(i);
@@ -530,15 +556,15 @@ void Engine::control_block() {
 
         v.target_midi = root_cur_ + (float)v.offset;
         // Only the root shift makes this glide; a repitch snaps while silent.
-        float gstep = dt * 7.0f / 12.0f + 1e-6f;
+        float gstep = rdt * 7.0f / 12.0f + 1e-6f;
         float gd = v.target_midi - v.cur_midi;
         v.cur_midi += clampf(gd, -gstep, gstep);
 
-        v.drift_phase += v.drift_rate * dt;
+        v.drift_phase += v.drift_rate * rdt;
         if (v.drift_phase >= 1.0f) v.drift_phase -= 1.0f;
         v.drift = std::sin(kTwoPi * v.drift_phase) * v.drift_depth;
 
-        float f0 = midi_hz(v.cur_midi + v.drift * (1.0f / 100.0f));
+        float f0 = midi_hz(v.cur_midi + pitch_ + v.drift * (1.0f / 100.0f));
         v.mip = bank_.mip_for(f0 * 1.02f);
         for (int u = 0; u < kUnison; ++u) {
             float f = f0 * std::pow(2.0f, v.detune[u] / 1200.0f);
@@ -556,9 +582,9 @@ void Engine::control_block() {
 
     // ---- bells ------------------------------------------------------------
     // The rate is now phrases per minute, not notes per minute.
-    bell_prob_ = clampf(s_bell_rate_.z / 60.0f * dt, 0.0f, 0.35f);
+    bell_prob_ = clampf(s_bell_rate_.z / 60.0f * rdt, 0.0f, 0.35f);
     if (phrase_len_ > 0) {
-        phrase_timer_ -= dt;
+        phrase_timer_ -= rdt;
         if (phrase_timer_ <= 0.0f) {
             fire_bell(phrase_notes_[phrase_pos_], phrase_level_);
             phrase_level_ *= 0.87f;  // a figure that leans away as it goes
@@ -571,7 +597,7 @@ void Engine::control_block() {
     }
 
     // ---- visuals ----------------------------------------------------------
-    motion_ -= motion_ * (1.0f - std::exp(-dt / 12.0f));
+    motion_ -= motion_ * (1.0f - std::exp(-rdt / 12.0f));
     spark_ -= spark_ * (1.0f - std::exp(-dt / 0.55f));
     publish_vis();
 }
@@ -579,7 +605,7 @@ void Engine::control_block() {
 void Engine::publish_vis() {
     v_level_.store(clampf(peak_, 0.0f, 1.0f), std::memory_order_relaxed);
     v_spark_.store(clampf(spark_, 0.0f, 1.0f), std::memory_order_relaxed);
-    v_root_.store(midi_hz(root_cur_), std::memory_order_relaxed);
+    v_root_.store(midi_hz(root_cur_ + pitch_), std::memory_order_relaxed);
     v_motion_.store(clampf(motion_, 0.0f, 1.0f), std::memory_order_relaxed);
     v_gate_.store(clampf(gate_, 0.0f, 1.0f), std::memory_order_relaxed);
     v_chord_.load(std::memory_order_relaxed);
@@ -598,7 +624,7 @@ void Engine::publish_vis() {
     for (int i = 0; i < kVoices; ++i) {
         float a = voice_[i].env * voice_[i].level;
         if (a < 0.001f) continue;
-        float t = (voice_[i].cur_midi - 24.0f) / 48.0f;  // ~C1..C5
+        float t = (voice_[i].cur_midi + pitch_ - 24.0f) / 48.0f;  // ~C1..C5
         int idx = (int)(clampf(t, 0.0f, 0.9999f) * (float)NE_BANDS);
         band[idx] += a;
     }

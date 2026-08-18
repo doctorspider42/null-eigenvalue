@@ -6,6 +6,7 @@
 //   nulleig_render out.wav 300 --mood 2     Halo
 //   nulleig_render out.wav 600 --tour       walks the field and every mood
 //   nulleig_render out.wav 120 --x 0.8 --y 0.3 --seed 7
+//   nulleig_render out.wav 120 --pitch -5 --speed 2.5   the second field
 //
 // It always prints a report. A render that peaks at 0.99, or whose loudest
 // second is nine times its quietest, or that contains a NaN, is a bug whether
@@ -55,6 +56,7 @@ struct Args {
     double seconds = 120.0;
     int mood = 1;
     float x = 0.5f, y = 0.45f;
+    float pitch = 0.0f, speed = 1.0f;
     uint32_t seed = 0x4e756c6c;
     bool tour = false;
     int rate = 48000;
@@ -71,6 +73,8 @@ int main(int argc, char** argv) {
         if (s == "--mood") a.mood = atoi(val());
         else if (s == "--x") a.x = (float)atof(val());
         else if (s == "--y") a.y = (float)atof(val());
+        else if (s == "--pitch") a.pitch = (float)atof(val());
+        else if (s == "--speed") a.speed = (float)atof(val());
         else if (s == "--seed") a.seed = (uint32_t)strtoul(val(), nullptr, 10);
         else if (s == "--rate") a.rate = atoi(val());
         else if (s == "--tour") a.tour = true;
@@ -83,6 +87,8 @@ int main(int argc, char** argv) {
     ne_set_seed(e, a.seed);
     ne_set_mood(e, a.mood);
     ne_set_field(e, a.x, a.y);
+    ne_set_pitch(e, a.pitch);
+    ne_set_rate(e, a.speed);
     ne_set_gain(e, 0.9f);
     ne_set_playing(e, 1);
 
@@ -119,6 +125,10 @@ int main(int argc, char** argv) {
             ne_set_field(e, (float)(0.5 + 0.5 * sin(t * 0.031)),
                          (float)(0.5 + 0.5 * sin(t * 0.017 + 1.1)));
             ne_set_touch(e, (fmod(t, 40.0) < 6.0) ? 1 : 0, 1.4f);
+            // Both ends of the second field too, on periods sharing no
+            // factor with the field's, so the tour reaches the corners.
+            ne_set_pitch(e, (float)(12.0 * sin(t * 0.0071)));
+            ne_set_rate(e, (float)pow(2.0, 2.0 * sin(t * 0.0043 + 0.7)));
         }
 
         ne_render(e, buf.data(), frames);
@@ -165,6 +175,8 @@ int main(int argc, char** argv) {
 
     printf("wrote %s  %.1f s @ %d Hz stereo\n", a.out.c_str(), (double)n_total / rate, rate);
     printf("  mood        %s%s\n", ne_mood_name(a.mood), a.tour ? " (tour: all)" : "");
+    if (!a.tour && (a.pitch != 0.0f || a.speed != 1.0f))
+        printf("  second      pitch %+.1f st   speed %.2fx\n", a.pitch, a.speed);
     printf("  peak        %.4f  %s\n", worst, worst > 0.995 ? "!! CLIPPING" : "ok");
     printf("  rms         mean %.4f   min/s %.4f   max/s %.4f   ratio %.2f\n", rms_mean,
            rms_min, rms_max, rms_min > 1e-6 ? rms_max / rms_min : 0.0);

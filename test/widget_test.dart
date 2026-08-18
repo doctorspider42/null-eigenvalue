@@ -11,6 +11,7 @@ import 'dart:io';
 import 'dart:ui';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:null_eigenvalue/src/drone_controller.dart';
 import 'package:null_eigenvalue/src/hud.dart';
 import 'package:null_eigenvalue/src/palette.dart';
 import 'package:null_eigenvalue/src/platform.dart';
@@ -89,6 +90,41 @@ void main() {
       expect(columnAtUnitScale * scale + 34 * scale, lessThan(540 * 0.75));
     });
 
+  });
+
+  group('the second field', () {
+    // The two-finger gesture is relative and has no scale printed on it, so
+    // the only home it has is one you can feel. These pin the feel.
+    const span = DroneController.pitchSpan;
+    const width = DroneController.pitchDetent;
+
+    test('has a home you can always get back to', () {
+      // Anything inside the band is exactly nothing. Without this, an
+      // instrument you can detune is an instrument you cannot re-tune - the
+      // odds of landing on 0.00 semitones by dragging a thumb are none.
+      expect(DroneController.detent(0, width, span), 0);
+      expect(DroneController.detent(width, width, span), 0);
+      expect(DroneController.detent(-width, width, span), 0);
+    });
+
+    test('leaving it is a slide and not a jump', () {
+      // The band is subtracted rather than snapped, so the first hair outside
+      // it is worth a hair. A snap would make the detent audible as a lurch,
+      // which on a pitch control is the one thing it must not be.
+      expect(DroneController.detent(width + 0.001, width, span),
+          closeTo(0.001, 1e-9));
+      expect(DroneController.detent(-width - 0.001, width, span),
+          closeTo(-0.001, 1e-9));
+    });
+
+    test('a full traverse reaches the ends and stops there', () {
+      // The accumulator is clamped a whole band past the span, which is what
+      // pays for the dead zone: without the extra width the axis would top out
+      // a detent short of its own range and never reach twelve semitones.
+      expect(DroneController.detent(span + width, width, span), span);
+      expect(DroneController.detent(span * 9, width, span), span);
+      expect(DroneController.detent(-span * 9, width, span), -span);
+    });
   });
 
   test('palette names match the engine order', () {

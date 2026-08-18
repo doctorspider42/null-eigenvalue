@@ -24,6 +24,24 @@ Drag anywhere. The screen is a 2D field:
 A fast drag is heard as well as seen: it briefly excites the instrument, so the
 gesture has a sound of its own and not only a result.
 
+**Two fingers** are a second pair of axes, and the two things a position in the
+field cannot reach:
+
+- **down ↕ up** is the base pitch, an octave either way;
+- **left ↔ right** is the speed — not of anything's pitch, but of how fast the
+  thing oscillates: the voices' breathing, their drift, the walk of the root,
+  the weather and the bells, every clock in the piece at once, from a quarter
+  of the written speed to four times it.
+
+Pitch moves the whole field together, so every interval in the chord stays
+exactly where it was, and speed leaves the pitch and the room alone entirely.
+
+Both are relative rather than absolute — there is nowhere a second pair of
+fingers could land that would mean a value — and both have a detent in the
+middle that you can feel, because an instrument you can detune and cannot
+re-tune is a broken one. The two numbers appear under the frequency for as long
+as they are moving and then take themselves away.
+
 Tap once to show the transport and the five moods; it hides itself again after
 a few seconds. While it is silent, tapping anywhere starts it.
 
@@ -38,16 +56,19 @@ the accompaniment, on an open fifth with no third in it at all.
 From a lock screen, a headphone remote or a car, **next / previous track**
 changes mood.
 
-On a desktop it is the same screen with a pointer instead of a thumb. Moving
-the mouse raises the transport and takes the cursor away again after four
-seconds of stillness, so a drone left running all evening is the picture and
-nothing else. The keyboard reaches everything:
+On a desktop it is the same screen with a pointer instead of a thumb, and the
+right button is the second pair of axes — a mouse has no second finger and its
+left button is the field already. Moving the mouse raises the transport and
+takes the cursor away again after four seconds of stillness, so a drone left
+running all evening is the picture and nothing else. The keyboard reaches
+everything:
 
 | | |
 |---|---|
 | `space` | play / pause |
 | `1`–`6` | mood |
 | arrows | the field |
+| shift + arrows | pitch and speed |
 | wheel, or `-` / `=` | volume |
 | `F` or `F11` | full screen |
 | `S` | sleep timer |
@@ -271,6 +292,7 @@ cmake -S tools/render -B tools/render/build -DCMAKE_BUILD_TYPE=Release
 cmake --build tools/render/build
 ./tools/render/build/nulleig_render out.wav 180 --mood 2
 ./tools/render/build/nulleig_render tour.wav 360 --tour
+./tools/render/build/nulleig_render low.wav 120 --pitch -5 --speed 2.5
 ```
 
 It prints peak, per-second RMS spread, DC offset, a NaN count, a dropout count

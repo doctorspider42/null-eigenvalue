@@ -72,6 +72,33 @@ class _FieldScreenState extends State<FieldScreen>
   double _movedPx = 0;
   bool _touching = false;
 
+  /// Fingers actually on the glass, and whether this gesture has ever had two
+  /// of them.
+  ///
+  /// The lock is what stops lifting one finger from throwing the field across
+  /// the screen: the recognizer hands the remaining finger back as a fresh
+  /// one-finger drag, and jumping the composition to wherever that finger
+  /// happens to be is not what letting go of the other one meant. Once two
+  /// have been down, the field waits until the glass is clear.
+  ///
+  /// Counted from raw pointer events rather than from the gesture's own
+  /// `pointerCount` for two reasons. The recognizer does not promise a last
+  /// callback - lifting the second finger without moving the first leaves it
+  /// in a state that ends silently - and its count is not fingers anyway: a
+  /// trackpad pan-zoom counts as two of them and arrives with no pointer at
+  /// all behind it. A count taken from downs and ups is balanced by
+  /// construction and means what it says.
+  int _fingers = 0;
+  bool _toneLock = false;
+
+  /// Desktop only. Whether the right button is down and dragging.
+  ///
+  /// Handled with raw pointer events rather than a recognizer because
+  /// GestureDetector has no secondary drag - and because the recognizers it
+  /// does have take any button, so the field has to be told explicitly to keep
+  /// its hands off this one.
+  bool _rightDrag = false;
+
   /// Desktop only. Whether the window is filling the screen, mirrored here so
   /// that Escape knows whether it has something to leave.
   bool _fullscreen = false;
@@ -95,6 +122,13 @@ class _FieldScreenState extends State<FieldScreen>
   bool _volumeHint = false;
   Timer? _volumeHintTimer;
 
+  /// The same, for the second field. It has two numbers and no other way to
+  /// read them: the frequency line moves with the pitch but says nothing about
+  /// how far from home it is, and the speed is not visible anywhere at all
+  /// until half a minute has gone by.
+  bool _toneHint = false;
+  Timer? _toneHintTimer;
+
   @override
   void initState() {
     super.initState();
@@ -112,6 +146,7 @@ class _FieldScreenState extends State<FieldScreen>
   void dispose() {
     _hudTimer?.cancel();
     _volumeHintTimer?.cancel();
+    _toneHintTimer?.cancel();
     _ticker.dispose();
     widget.controller.removeListener(_onControllerChanged);
     widget.updater.removeListener(_onControllerChanged);
@@ -191,23 +226,57 @@ class _FieldScreenState extends State<FieldScreen>
     _state.addTrail(_state.target);
   }
 
-  void _onPanStart(DragStartDetails d) {
+  /// One recognizer for both gestures, because Flutter will not let a pan and
+  /// a scale share a detector and this needs to know how many fingers are on
+  /// the glass. One is the field, two is the second field.
+  ///
+  /// How many is [_fingers] and deliberately not `details.pointerCount`. That
+  /// number counts a trackpad gesture as two by definition - the pan-zoom
+  /// protocol never says how many fingers are really on the pad, so the
+  /// framework assumes the minimum - and a two-finger scroll on a laptop is
+  /// therefore indistinguishable from two fingers on a phone. Worse, a
+  /// pan-zoom is not a pointer: it produces no down and no up, so a lock taken
+  /// on the strength of it is never released and the field stays dead
+  /// afterwards. Counting the pointers we were actually handed says
+  /// "one mouse" for the trackpad, which is what it is.
+  void _onScaleStart(ScaleStartDetails d) {
     final size = context.size;
     if (size == null) return;
+    if (_fingers >= 2) {
+      _toneLock = true;
+      return;
+    }
+    if (_toneLock || _rightDrag) return;
     _touching = true;
     _movedPx = 0;
-    _setFromLocal(d.localPosition, size);
+    _setFromLocal(d.localFocalPoint, size);
     _hideHud();
   }
 
-  void _onPanUpdate(DragUpdateDetails d) {
+  void _onScaleUpdate(ScaleUpdateDetails d) {
     final size = context.size;
     if (size == null) return;
-    _movedPx += d.delta.distance;
-    _setFromLocal(d.localPosition, size);
+    if (_fingers >= 2) {
+      _toneLock = true;
+      // The focal point, not the span: this is a two-finger drag and not a
+      // pinch. Nothing here has a size to zoom.
+      _dragTone(d.focalPointDelta, size);
+      return;
+    }
+    if (_toneLock || _rightDrag) return;
+    _movedPx += d.focalPointDelta.distance;
+    _setFromLocal(d.localFocalPoint, size);
   }
 
-  void _onPanEnd(_) {
+  void _onScaleEnd(ScaleEndDetails d) => _endFieldTouch();
+
+  /// Whichever of the two notices first - a pointer leaving, or the gesture
+  /// ending - does this once and the other finds nothing to do. They arrive in
+  /// that order and not the other, but only because the pointer layer sits
+  /// above the gesture arena, which is not the sort of thing to let a stuck
+  /// finger depend on.
+  void _endFieldTouch() {
+    if (!_touching) return;
     _touching = false;
     widget.controller.endTouch();
     // Park the final position without the touch flag, so the engine stops
@@ -218,6 +287,60 @@ class _FieldScreenState extends State<FieldScreen>
       touching: false,
     );
   }
+
+  /// Two fingers, or the right button: up is higher, right is faster, and a
+  /// full traverse of the screen is the whole of each range. Relative, because
+  /// there is nowhere for a second pair of fingers to land that could mean an
+  /// absolute value - putting them down would otherwise retune the instrument
+  /// before they had moved.
+  void _dragTone(Offset delta, Size size) => _changeTone(
+        semitones: -delta.dy / size.height * 2 * DroneController.pitchSpan,
+        octaves: delta.dx / size.width * 2 * DroneController.rateSpan,
+      );
+
+  void _changeTone({double semitones = 0, double octaves = 0}) {
+    widget.controller.nudgeTone(semitones: semitones, octaves: octaves);
+    _showToneHint();
+  }
+
+  void _showToneHint() {
+    // Unconditionally, unlike the volume's. Both numbers move for as long as
+    // the finger does, and a setState that only fired on the first frame of a
+    // drag would leave the readout showing where the gesture started.
+    setState(() => _toneHint = true);
+    _showHud();
+    _toneHintTimer?.cancel();
+    _toneHintTimer = Timer(const Duration(milliseconds: 2200), () {
+      if (mounted) setState(() => _toneHint = false);
+    });
+  }
+
+  /// Every finger, whether or not the recognizer made a gesture out of it.
+  void _onFingerDown(PointerDownEvent event) => _fingers++;
+
+  void _onFingerUp(PointerEvent event) {
+    if (--_fingers > 0) return;
+    _fingers = 0;
+    _toneLock = false;
+    _endFieldTouch();
+  }
+
+  /// Desktop only. A mouse has no second finger and its left button is already
+  /// the field, so the second field is the right one.
+  void _onMouseDown(PointerDownEvent event) {
+    if (_sleepVisible) return;
+    if (event.buttons & kSecondaryButton == 0) return;
+    _rightDrag = true;
+  }
+
+  void _onMouseMove(PointerMoveEvent event) {
+    if (!_rightDrag) return;
+    final size = context.size;
+    if (size == null) return;
+    _dragTone(event.delta, size);
+  }
+
+  void _endRightDrag(PointerEvent event) => _rightDrag = false;
 
   void _onTap() {
     final c = widget.controller;
@@ -340,6 +463,17 @@ class _FieldScreenState extends State<FieldScreen>
       c.setMood(mood);
       _showHud();
       return KeyEventResult.handled;
+    }
+
+    // Shifted, the arrows are the second field - the same two axes the right
+    // button drags. Checked before the plain arrows, which would otherwise
+    // swallow them and move the picture instead.
+    if (HardwareKeyboard.instance.isShiftPressed) {
+      final tone = _toneOffset(key);
+      if (tone != null) {
+        _changeTone(semitones: tone.dy, octaves: tone.dx);
+        return KeyEventResult.handled;
+      }
     }
 
     // The arrows are the field itself, not a menu: the same two axes the
@@ -534,6 +668,19 @@ class _FieldScreenState extends State<FieldScreen>
   /// Which way an arrow key moves the field, or null for anything else. In
   /// steps small enough that holding a key reads as a slow sweep rather than
   /// as a jump.
+  /// Which way a shifted arrow moves the second field: a semitone at a time
+  /// up and down, a tenth of an octave of speed left and right. Deliberately
+  /// coarser than the field's step - a control with a detent in the middle of
+  /// it has to be able to leave the detent on the first press, or the first
+  /// press appears to do nothing.
+  Offset? _toneOffset(LogicalKeyboardKey key) {
+    if (key == LogicalKeyboardKey.arrowLeft) return const Offset(-0.1, 0);
+    if (key == LogicalKeyboardKey.arrowRight) return const Offset(0.1, 0);
+    if (key == LogicalKeyboardKey.arrowUp) return const Offset(0, 1);
+    if (key == LogicalKeyboardKey.arrowDown) return const Offset(0, -1);
+    return null;
+  }
+
   Offset? _arrowOffset(LogicalKeyboardKey key) {
     const step = 0.035;
     if (key == LogicalKeyboardKey.arrowLeft) return const Offset(-step, 0);
@@ -620,21 +767,28 @@ class _FieldScreenState extends State<FieldScreen>
       body: Stack(
         fit: StackFit.expand,
         children: <Widget>[
-          GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTap: _onTap,
-            onPanStart: _onPanStart,
-            onPanUpdate: _onPanUpdate,
-            onPanEnd: _onPanEnd,
-            onPanCancel: () => _onPanEnd(null),
-            child: RepaintBoundary(
-              child: CustomPaint(
-                painter: NebulaPainter(
-                  state: _state,
-                  textures: widget.textures,
+          // The counter is outside the recognizer because it has to see every
+          // finger, including the ones the recognizer never makes a gesture
+          // out of.
+          Listener(
+            onPointerDown: _onFingerDown,
+            onPointerUp: _onFingerUp,
+            onPointerCancel: _onFingerUp,
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: _onTap,
+              onScaleStart: _onScaleStart,
+              onScaleUpdate: _onScaleUpdate,
+              onScaleEnd: _onScaleEnd,
+              child: RepaintBoundary(
+                child: CustomPaint(
+                  painter: NebulaPainter(
+                    state: _state,
+                    textures: widget.textures,
+                  ),
+                  isComplex: true,
+                  willChange: true,
                 ),
-                isComplex: true,
-                willChange: true,
               ),
             ),
           ),
@@ -742,6 +896,7 @@ class _FieldScreenState extends State<FieldScreen>
                     sleepLabel: _sleepLabel(c),
                     updateLabel: _updateLabel(),
                     onUpdateTap: _onUpdateTap,
+                    toneLabel: _toneHint ? _toneLabel(c) : null,
                     volumeLabel: _volumeHint
                         ? 'VOLUME ${(c.volume * 100).round()}%'
                         : null,
@@ -877,6 +1032,10 @@ class _FieldScreenState extends State<FieldScreen>
         // stuck rather than as the HUD not being a scrollable thing.
         child: Listener(
           onPointerSignal: _onPointerSignal,
+          onPointerDown: _onMouseDown,
+          onPointerMove: _onMouseMove,
+          onPointerUp: _endRightDrag,
+          onPointerCancel: _endRightDrag,
           child: screen,
         ),
       ),
@@ -1002,6 +1161,16 @@ class _FieldScreenState extends State<FieldScreen>
     if (u.stage != UpdateStage.available) return;
     unawaited(u.install());
     _restartHudTimer();
+  }
+
+  /// The second field, as two numbers. The transposition is signed because
+  /// the only thing worth knowing about it is which way and how far from home
+  /// it is; the speed is a multiplier because "1.80x" is what it means and
+  /// "+0.85 octaves" is not.
+  String _toneLabel(DroneController c) {
+    final p = c.pitch;
+    final semis = p == 0 ? '0.0' : '${p > 0 ? '+' : ''}${p.toStringAsFixed(1)}';
+    return 'PITCH $semis   SPEED ${c.rate.toStringAsFixed(2)}\u00d7';
   }
 
   /// The lines to show under the readout, or null to show nothing.
