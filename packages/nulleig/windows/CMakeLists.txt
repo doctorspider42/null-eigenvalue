@@ -46,7 +46,13 @@ target_compile_definitions(nulleig PRIVATE
 # real". So this build takes the default floating point model. The synthesizer
 # is fourteen voices and an eight-line reverb; /O2 alone leaves it about two
 # percent of a core.
-target_compile_options(nulleig PRIVATE /O2 /EHsc)
+#
+# Optimisation is per-configuration, and not because Debug wants to be slow:
+# Flutter's Debug config carries /RTC1, and MSVC refuses /O2 and /RTC1 in the
+# same command line (D8016), so forcing /O2 everywhere made `flutter run -d
+# windows` fail to build at all while Release was fine.
+target_compile_options(nulleig PRIVATE /EHsc)
+target_compile_options(nulleig PRIVATE $<$<NOT:$<CONFIG:Debug>>:/O2>)
 
 # WASAPI's device enumeration is COM, and miniaudio's fallback backend is
 # WinMM. Everything else it needs it finds with LoadLibrary at run time.
