@@ -84,6 +84,12 @@ void main() {
     double seconds = 41.3,
     List<Offset> trail = const <Offset>[],
     Size size = kPhone,
+    double tone = 0,
+    double rate = 1,
+    // Whether the hand has just been on the field. False is the resting
+    // state - no finger, no chrome, the wake long gone - which is the one the
+    // field's mark exists for.
+    bool handOn = true,
     String? updateLabel,
     String? volumeLabel,
     bool panel = false,
@@ -109,8 +115,14 @@ void main() {
       textures = await Textures.load();
     });
 
+    // The palette arrives at the painter already transposed, exactly as the
+    // screen hands it over - the pitch is one colour scheme and not a tint
+    // applied on top of another one.
     final state = NebulaState()
-      ..palette = MoodPalette.all[mood]
+      ..palette = MoodPalette.all[mood].transposed(tone)
+      ..tone = tone
+      ..rate = rate
+      ..chrome = hud ? 1 : 0
       ..idleHint = idleHint
       ..centre = centre
       ..target = centre;
@@ -122,6 +134,7 @@ void main() {
     // arrangement the app will never actually show.
     var t = 0.0;
     while (t < seconds) {
+      if (handOn) state.bumpMark();
       state.advance(1 / 60, vis);
       t += 1 / 60;
     }
@@ -458,6 +471,65 @@ void main() {
         centroid: 0.78,
         bands: <double>[0.20, 0.30, 0.48, 0.64, 0.74, 0.66, 0.50, 0.30],
         rootHz: 61.7,
+      ),
+    );
+  });
+
+  // ------------------------------------------------- the second field, seen
+  // The two shots the second gesture is for. Same mood, same vis, same field:
+  // everything that differs between them is the pitch and the speed, which is
+  // the only way to judge whether the picture actually says which way the
+  // instrument has been taken.
+
+  testWidgets('an octave down: heavier, darker, wider', (tester) async {
+    await shot(
+      tester,
+      '13-pitch-down',
+      mood: 1,
+      tone: -1,
+      rate: 0.25,
+      centre: const Offset(0.30, 0.68),
+      vis: _vis(
+        level: 0.52,
+        centroid: 0.38,
+        bands: <double>[0.72, 0.66, 0.44, 0.30, 0.18, 0.10, 0.04, 0.02],
+        rootHz: 27.5,
+      ),
+    );
+  });
+
+  testWidgets('an octave up: tighter, brighter', (tester) async {
+    await shot(
+      tester,
+      '14-pitch-up',
+      mood: 1,
+      tone: 1,
+      rate: 4,
+      centre: const Offset(0.78, 0.28),
+      vis: _vis(
+        level: 0.52,
+        centroid: 0.38,
+        bands: <double>[0.72, 0.66, 0.44, 0.30, 0.18, 0.10, 0.04, 0.02],
+        rootHz: 110.0,
+      ),
+    );
+  });
+
+  testWidgets('the field mark at rest, long after the hand', (tester) async {
+    // The state the mark exists for and the hardest one to get right: no
+    // finger, no chrome, no wake left, and the question "where is this set"
+    // still has to have an answer on screen.
+    await shot(
+      tester,
+      '15-mark-at-rest',
+      mood: 3,
+      handOn: false,
+      centre: const Offset(0.24, 0.34),
+      vis: _vis(
+        level: 0.47,
+        centroid: 0.58,
+        bands: <double>[0.40, 0.55, 0.66, 0.30, 0.58, 0.22, 0.30, 0.10],
+        rootHz: 49.0,
       ),
     );
   });

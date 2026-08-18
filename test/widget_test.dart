@@ -156,6 +156,52 @@ void main() {
     expect(_luma(bright), greaterThan(_luma(dull)));
   });
 
+  group('the second field in the picture', () {
+    // Pitch is colour as well as sound. What has to hold is the direction and
+    // the fact that home is untouched - the exact amounts are taste, and a
+    // test that pins taste is a test that has to be edited to change a look.
+    final p = MoodPalette.all[1];
+
+    test('home is the mood and nothing else', () {
+      // The default state of the app. If transposing at zero returned a
+      // slightly different palette, every mood in the app would be a shade
+      // off its own colours for no reason anyone could see.
+      final home = p.transposed(0);
+      expect(home.bg, p.bg);
+      expect(home.deep, p.deep);
+      expect(home.mid, p.mid);
+      expect(home.accent, p.accent);
+    });
+
+    test('up is brighter and down is darker, all the way through', () {
+      final up = p.transposed(1);
+      final down = p.transposed(-1);
+      for (final pair in <List<Color>>[
+        <Color>[down.deep, p.deep, up.deep],
+        <Color>[down.mid, p.mid, up.mid],
+        <Color>[down.accent, p.accent, up.accent],
+      ]) {
+        expect(_luma(pair[0]), lessThan(_luma(pair[1])));
+        expect(_luma(pair[2]), greaterThan(_luma(pair[1])));
+      }
+    });
+
+    test('the page never becomes a hole', () {
+      // The one rule the background has: a real black rectangle on an OLED
+      // reads as a hole rather than as depth, and an octave down darkens it.
+      for (final mood in MoodPalette.all) {
+        expect(_luma(mood.transposed(-1).bg), greaterThan(0.005));
+      }
+    });
+
+    test('past an octave is an octave', () {
+      // The controller clamps its own accumulator, but the amount handed here
+      // is a division by the span and a spare band is allowed past it.
+      expect(p.transposed(-4).mid, p.transposed(-1).mid);
+      expect(p.transposed(9).accent, p.transposed(1).accent);
+    });
+  });
+
   test('palette lerp is stable at the ends', () {
     final a = MoodPalette.all[0];
     final b = MoodPalette.all[3];

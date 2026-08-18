@@ -105,6 +105,16 @@ class DroneController extends ChangeNotifier {
         _ease(_moodBlend),
       );
 
+  /// The mood's colours as the second field's pitch leaves them, and what
+  /// everything that draws in this app is actually given.
+  ///
+  /// [palette] is the mood and nothing else, which is what a mood dot means
+  /// and what the artwork is drawn from; this is the mood as it currently
+  /// sounds. Transposing moves every voice at once, so it moves the picture
+  /// and the chrome at once too - the alternative is a screen whose colours
+  /// say one thing while the instrument says another.
+  MoodPalette get tonedPalette => palette.transposed(pitch / pitchSpan);
+
   String get moodName => MoodPalette.all[_mood].name;
 
   /// Called by whatever is driving the frame clock.

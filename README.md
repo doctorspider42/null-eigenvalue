@@ -42,6 +42,22 @@ middle that you can feel, because an instrument you can detune and cannot
 re-tune is a broken one. The two numbers appear under the frequency for as long
 as they are moving and then take themselves away.
 
+Both are also visible without reading anything. The speed is the picture's
+speed: every orbit, every breath and every ring is on the same clock as the
+music, so a quarter speed is a picture that has slowed to a quarter and four
+times is a field that is suddenly busy. The pitch is the colour and the size —
+transposing down slides every colour one place toward the page and opens the
+forms out, because a lower note is a longer wave, and transposing up tightens
+them and takes the palette up toward its own brightest colour. The chrome moves
+with it: the mood's accent is the accent of the pitch you are playing at.
+
+Where the field is set has a mark of its own — a star where the hand left it,
+with a hairline leaving it for each of the four edges, breathing slowly on the
+same clock as everything else. It comes up to full while you are on the glass
+or while the chrome is up, and rests at a whisper the rest of the time, so a
+field left somewhere unusual for an hour is still a field you can see the
+setting of.
+
 Tap once to show the transport and the five moods; it hides itself again after
 a few seconds. While it is silent, tapping anywhere starts it.
 
@@ -259,6 +275,30 @@ are the register slices the engine publishes, a slow ring expands each time a
 voice takes a new pitch, and a point of light flashes for every bell. The
 engine hands the UI eight numbers and a few scalars; there is no FFT and no
 second thread.
+
+The second field is in there twice. Speed multiplies the picture's own clock,
+integrated rather than applied, so changing it is a step in a derivative and
+nothing on screen can jump — the same reason the engine needs no smoothing on
+it. Pitch is a transposition of the palette: each stop slides one place along
+the ladder the palette already is, rather than a tint being washed over the
+whole picture, which would say "a filter has been put over this" and not "the
+instrument is lower". The page moves least of all and never becomes black,
+because the blobs are added to it and a hole has no depth to add to.
+
+The field's mark is the one thing on screen that is a control rather than a
+reading. The composition follows the finger by a third — enough parallax to
+feel connected, and deliberately not a translation of the whole picture — which
+says that the field moved but not where it ended up, and after the wake has
+faded nothing answered "what is this set to". So the mark is drawn at the true
+coordinates, and its rays fade out on their way to the frame so that they
+attach it to the edges without ruling a cross through the picture. Four of
+them, rather than the two the axes would justify: two arms made the lengths
+readable as the values and made the mark look like a drawing with a piece
+missing. They stand down while the chrome is up, because the transport and the
+dots are a column down the middle of the screen and half the cross is a line
+down the middle of the screen. The star breathes at two periods in the golden
+ratio, on the music's clock rather than the hand's, and its white core does
+not — a coordinate that pulses is a coordinate you cannot read off.
 
 ## How it is built
 
