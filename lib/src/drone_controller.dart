@@ -143,6 +143,8 @@ class DroneController extends ChangeNotifier {
       // A phone that will not give us preferences is not a reason to refuse to
       // make a sound.
     }
+    // What was just read back is, by definition, what the store already holds.
+    _written = _snapshot();
     engine.mood = _mood;
     engine.setField(_x, _y);
     engine.gain = _volume;
@@ -172,13 +174,64 @@ class DroneController extends ChangeNotifier {
 
   String sessionInfo() => engine.sessionInfo();
 
+  /// The durable state, as it would be written right now.
+  Map<String, Object> _snapshot() => <String, Object>{
+        'mood': _mood,
+        'x': _x,
+        'y': _y,
+        'volume': _volume,
+        'pitch': _pitchRaw,
+        'rate': _rateRaw,
+      };
+
+  /// What is already in the store, so that a flush writes the numbers that
+  /// moved and not the four that did not.
+  Map<String, Object>? _written;
+
+  Timer? _saveTimer;
+
+  /// How long a moving value is allowed to stay unwritten. Short enough that
+  /// closing the window straight after a drag keeps the field, long enough
+  /// that a drag is one write rather than a hundred.
+  static const Duration _saveInterval = Duration(milliseconds: 400);
+
+  /// Records that the durable state has changed, and writes it a moment later.
+  ///
+  /// Deliberately not a write. On a phone the store is native and a set is a
+  /// cheap async message, but on the desk `shared_preferences` has no native
+  /// store behind it: every `setDouble` re-reads the whole JSON file, encodes
+  /// it again and writes it back synchronously, and on Windows it re-derives
+  /// the directory from the executable's VERSIONINFO resource each time.
+  ///
+  /// [setField] and [nudgeTone] are called once per frame for as long as a
+  /// hand is down. Six keys times seventy-five frames is four hundred and
+  /// fifty of those a second, on the thread that also builds the picture - so
+  /// the slowest thing in the app was a drag, and none of it was the drawing.
+  ///
+  /// Coalesced instead: whoever moves a value says so, and at most once every
+  /// [_saveInterval] the ones that actually changed go out together. The most
+  /// a hard kill can now cost is the last fraction of a second of a gesture,
+  /// which is a position that was still moving anyway.
   void _save() {
-    _prefs?.setInt('mood', _mood);
-    _prefs?.setDouble('x', _x);
-    _prefs?.setDouble('y', _y);
-    _prefs?.setDouble('volume', _volume);
-    _prefs?.setDouble('pitch', _pitchRaw);
-    _prefs?.setDouble('rate', _rateRaw);
+    _saveTimer ??= Timer(_saveInterval, _flushSave);
+  }
+
+  void _flushSave() {
+    _saveTimer = null;
+    final prefs = _prefs;
+    if (prefs == null) return;
+    final Map<String, Object> now = _snapshot();
+    final Map<String, Object>? was = _written;
+    for (final MapEntry<String, Object> e in now.entries) {
+      if (was != null && was[e.key] == e.value) continue;
+      final Object v = e.value;
+      if (v is int) {
+        prefs.setInt(e.key, v);
+      } else {
+        prefs.setDouble(e.key, v as double);
+      }
+    }
+    _written = now;
   }
 
   /// Sets the master gain. The engine ramps to it internally, so this is safe
@@ -229,7 +282,14 @@ class DroneController extends ChangeNotifier {
     // waste.
   }
 
-  void endTouch() => engine.setTouch(active: false);
+  /// The hand coming off. Also where the field is written: it happens once per
+  /// gesture rather than once a frame, so it costs nothing to be exact here,
+  /// and it means the value on disk is never more than one gesture old.
+  void endTouch() {
+    engine.setTouch(active: false);
+    _saveTimer?.cancel();
+    _flushSave();
+  }
 
   void setMood(int value) {
     final m = value.clamp(0, neMoodCount - 1);
@@ -369,6 +429,9 @@ class DroneController extends ChangeNotifier {
   @override
   void dispose() {
     _sleepFallback?.cancel();
+    // Anything still pending goes out now rather than with the isolate.
+    _saveTimer?.cancel();
+    _flushSave();
     engine.dispose();
     super.dispose();
   }
